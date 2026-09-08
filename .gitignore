@@ -1,0 +1,9 @@
+node_modules
+.DS_Store
+coverage
+coverage-html
+*.lcov
+.turbo
+.qlty
+packages/sdk/js/tsconfig.tsbuildinfo
+test-results/.last-run.json

@@ -1,0 +1,25 @@
+name: typecheck
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  typecheck:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Setup Bun
+        uses: ./.github/actions/setup-bun
+
+      - name: Run typecheck
+        # Default turbo concurrency (10) spawns enough parallel tsgo
+        # processes to OOM-kill the runner (ubuntu-latest: 4 vCPU/16GB).
+        run: bun turbo typecheck --concurrency=4

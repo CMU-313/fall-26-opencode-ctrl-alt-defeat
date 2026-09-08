@@ -1,0 +1,47 @@
+name: P1B Starter Task Issue
+description: Use this template to describe the Qlty smell that you will refactor for P1B.
+title: "P1B: Refactor (<full/path/to/file.js:line_number>): <smell>"
+labels: ["P1B"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Instructions:**
+        * Ensure no one else is working on the same **file + smell**.
+        * After submitting, comment **"I would like to work on this please!"** to trigger bot assignment.
+        * Keep evidence focused; do **not** paste a full project dump.
+
+  - type: checkboxes
+    id: uniqueness
+    attributes:
+      label: Uniqueness check
+      options:
+      - label: I have searched open issues and confirmed this **file + smell** is not already taken.
+    validations:
+      required: true
+
+  - type: input
+    id: filepath
+    attributes:
+      label: Full path to the Typescript file
+      description: Must be under **packages/** and end with **.ts**
+      placeholder: e.g., packages/desktop/src/main/apps.ts
+    validations: 
+      required: true
+
+  - type: input
+    id: scope
+    attributes:
+      label: Function(s)/scope targeted
+      placeholder: e.g., render(), getCategoryTopics(), Flags.validate
+    validations:
+      required: true
+
+  - type: textarea
+    id: qlty_logs
+    attributes:
+      label: Relevant Qlty output
+      description: Run `qlty smells --no-snippet <file>` and paste only the lines that prove the smell and provide line numbers.
+      render: shell
+    validations:
+      required: true

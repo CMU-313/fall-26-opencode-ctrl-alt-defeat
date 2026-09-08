@@ -1,0 +1,47 @@
+{
+  "$schema": "https://v2-8-13.turborepo.dev/schema.json",
+  "globalEnv": ["CI", "OPENCODE_DISABLE_SHARE"],
+  "globalPassThroughEnv": ["CI", "OPENCODE_DISABLE_SHARE"],
+  "tasks": {
+    "typecheck": {},
+    "build": {
+      "dependsOn": [],
+      "outputs": ["dist/**"]
+    },
+    // "test" has no generic entry on purpose: `bun turbo test` in CI (test.yml)
+    // only runs the package-scoped tasks listed below, not every package's
+    // "test" script. Running the full suite for every package on every push
+    // is too slow, so most packages' tests don't run in CI at all right now.
+    //
+    // If you're changing a package that isn't listed here and it has its own
+    // "test" script (check its package.json), add an entry for it so your
+    // changes get covered, e.g.:
+    //   "@opencode-ai/llm#test": {
+    //     "dependsOn": ["^build"],
+    //     "outputs": []
+    //   },
+    // Only add the package(s) your change actually touches — don't add all
+    // of them, that defeats the point of keeping CI fast.
+    "opencode#test": {
+      "dependsOn": ["^build"],
+      "outputs": [],
+      "passThroughEnv": ["*"]
+    },
+    "@opencode-ai/core#test": {
+      "dependsOn": ["^build"],
+      "outputs": []
+    },
+    "@opencode-ai/app#test": {
+      "dependsOn": ["^build"],
+      "outputs": []
+    },
+    "@opencode-ai/ui#test": {
+      "dependsOn": ["^build"],
+      "outputs": []
+    },
+    "@opencode-ai/session-ui#test": {
+      "dependsOn": ["^build"],
+      "outputs": []
+    }
+  }
+}
