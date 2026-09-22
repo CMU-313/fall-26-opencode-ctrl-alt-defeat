@@ -43,9 +43,18 @@ export function hints(template: string) {
   return result
 }
 
+export function onboardingStub() {
+  return [
+    "Project onboarding placeholder: this flow is not implemented yet.",
+    "This placeholder flow will explain the project architecture, key directories, and important files before you start making changes.",
+    "Next steps: inspect the repo layout, identify the entrypoints, and trace the main configuration and runtime files.",
+  ].join(" ")
+}
+
 export const Default = {
   INIT: "init",
   REVIEW: "review",
+  ONBOARD: "onboard",
 } as const
 
 export interface Interface {
@@ -85,6 +94,15 @@ const layer = Layer.effect(
         },
         subtask: true,
         hints: hints(PROMPT_REVIEW),
+      }
+      commands[Default.ONBOARD] = {
+        name: Default.ONBOARD,
+        description: "project onboarding overview placeholder",
+        source: "command",
+        get template() {
+          return onboardingStub()
+        },
+        hints: [],
       }
 
       for (const [name, command] of Object.entries(cfg.command ?? {})) {
