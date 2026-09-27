@@ -21,7 +21,7 @@ import { createRuntimeLifecycle } from "./runtime.lifecycle"
 import { trace } from "./trace"
 import { cycleVariant, formatModelLabel, resolveSavedVariant, resolveVariant, saveVariant } from "./variant.shared"
 import type { LocalReplayAnchor, LocalReplayRow, RunInput, RunPrompt, RunProvider, StreamCommit } from "./types"
-import { hintPrompt, MissingHintContextError } from "./hint"
+import { prepareHintPrompt } from "./hint"
 
 /** @internal Exported for testing */
 export { pickVariant, resolveVariant } from "./variant.shared"
@@ -555,22 +555,7 @@ async function runInteractiveRuntime(input: RunRuntimeInput, deps: RunRuntimeDep
       footer,
       initialInput: input.initialInput,
       trace: log,
-      preparePrompt: (prompt) => {
-        if (prompt.command?.name !== "hint") return { prompt }
-
-        try {
-          const context = state.history.findLast((item) => item.mode !== "shell" && item.text.trim())
-          return {
-            prompt: {
-              text: hintPrompt(context?.text),
-              parts: [],
-            },
-          }
-        } catch (error) {
-          if (error instanceof MissingHintContextError) return { error: error.message }
-          throw error
-        }
-      },
+      preparePrompt: (prompt) => prepareHintPrompt(prompt, state.history),
       onSend: (prompt) => {
         state.shown = true
         state.history.push(prompt)
