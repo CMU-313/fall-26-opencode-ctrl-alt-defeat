@@ -82,7 +82,6 @@ import { getRevertDiffFiles } from "../../util/revert-diff"
 import { OPENCODE_BASE_MODE, useBindings, useCommandShortcut, useOpencodeKeymap } from "../../keymap"
 import { usePathFormatter } from "../../context/path-format"
 import { LocationProvider } from "../../context/location"
-import { Hint } from "@opencode-ai/core/hint"
 
 addDefaultParsers(parsers.parsers)
 
@@ -514,32 +513,6 @@ export function Session() {
       },
       run: () => {
         dialog.replace(() => <DialogSessionRename session={route.sessionID} />)
-      },
-    },
-    {
-      title: "Get a debugging hint",
-      value: "session.hint",
-      category: "Session",
-      slash: {
-        name: "hint",
-      },
-      run: () => {
-        const message = messages().findLast((item) => item.role === "user")
-        const context = message
-          ? (sync.data.part[message.id] ?? [])
-              .filter((part): part is TextPart => part.type === "text" && !part.synthetic)
-              .map((part) => part.text)
-              .join("\n")
-          : undefined
-
-        try {
-          prompt?.set({ input: Hint.prompt(context), parts: [] })
-          prompt?.submit()
-          dialog.clear()
-        } catch (error) {
-          if (!(error instanceof Hint.MissingContextError)) throw error
-          toast.show({ variant: "warning", message: error.message })
-        }
       },
     },
     {
