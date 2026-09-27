@@ -27,6 +27,7 @@ export type QueueInput = {
   footer: FooterApi
   initialInput?: string
   trace?: Trace
+  preparePrompt?: (prompt: RunPrompt) => { prompt: RunPrompt } | { error: string }
   onSend?: (prompt: RunPrompt) => void
   onNewSession?: () => void | Promise<void>
   run: (prompt: RunPrompt, signal: AbortSignal) => Promise<void>
@@ -270,7 +271,19 @@ export async function runPromptQueue(input: QueueInput): Promise<void> {
       return
     }
 
-    if (prompt.mode !== "shell" && isExitCommand(prompt.text)) {
+    const prepared = input.preparePrompt?.(prompt) ?? { prompt }
+    if ("error" in prepared) {
+      input.footer.append({
+        kind: "error",
+        text: prepared.error,
+        phase: "final",
+        source: "system",
+      })
+      return
+    }
+    const next = prepared.prompt
+
+    if (next.mode !== "shell" && isExitCommand(next.text)) {
       input.footer.close()
       return
     }
@@ -280,24 +293,24 @@ export async function runPromptQueue(input: QueueInput): Promise<void> {
       active &&
       active.mode !== "shell" &&
       !active.command &&
-      prompt.mode !== "shell" &&
-      !prompt.command &&
-      !isNewCommand(prompt.text)
+      next.mode !== "shell" &&
+      !next.command &&
+      !isNewCommand(next.text)
     ) {
       const queued: FooterQueuedPrompt = {
         messageID: MessageID.ascending(),
         partID: PartID.ascending(),
-        prompt,
+        prompt: next,
       }
       state.queued = [...state.queued, queued]
-      state.queue.push(prompt)
+      state.queue.push(next)
       syncQueue()
       return
     }
 
-    state.queue.push(prompt)
+    state.queue.push(next)
     syncQueue()
-    if (prompt.mode !== "shell" && isNewCommand(prompt.text)) {
+    if (next.mode !== "shell" && isNewCommand(next.text)) {
       drain()
       return
     }
