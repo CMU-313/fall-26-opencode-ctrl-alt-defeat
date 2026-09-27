@@ -25,7 +25,7 @@ import { Filesystem } from "@/util/filesystem"
 import { createOpencodeClient, type OpencodeClient, type ToolPart } from "@opencode-ai/sdk/v2"
 import { FormatError, FormatUnknownError } from "../error"
 import { INTERACTIVE_INPUT_ERROR, resolveInteractiveStdin } from "./run/runtime.stdin"
-import { hintPrompt, MissingHintContextError } from "./run/hint"
+import { Hint } from "@opencode-ai/core/hint"
 
 type ModelInput = Parameters<OpencodeClient["session"]["prompt"]>[0]["model"]
 
@@ -426,11 +426,11 @@ export const RunCommand = effectCmd({
         if (!args.hint) return { message, initialInput: resolvedInitialInput }
         try {
           return {
-            message: hintPrompt(message),
-            initialInput: hintPrompt(resolvedInitialInput),
+            message: Hint.prompt(message),
+            initialInput: Hint.prompt(resolvedInitialInput),
           }
         } catch (error) {
-          if (error instanceof MissingHintContextError) die(error.message)
+          if (error instanceof Hint.MissingContextError) die(error.message)
           throw error
         }
       })()

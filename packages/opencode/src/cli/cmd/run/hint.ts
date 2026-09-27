@@ -1,20 +1,5 @@
+import { Hint } from "@opencode-ai/core/hint"
 import type { RunPrompt } from "./types"
-
-const REQUEST = "Give one concise debugging hint that helps identify the next step without solving the bug outright."
-
-export class MissingHintContextError extends Error {
-  constructor() {
-    super("No bug context available. Describe the bug before asking for a hint.")
-    this.name = "MissingHintContextError"
-  }
-}
-
-export function hintPrompt(context: string | undefined) {
-  const bug = context?.trim()
-  if (!bug) throw new MissingHintContextError()
-
-  return `${REQUEST}\n\nBug context:\n${bug}`
-}
 
 export function prepareHintPrompt(prompt: RunPrompt, history: RunPrompt[]) {
   if (prompt.command?.name !== "hint") return { prompt }
@@ -23,12 +8,12 @@ export function prepareHintPrompt(prompt: RunPrompt, history: RunPrompt[]) {
     const context = history.findLast((item) => item.mode !== "shell" && item.text.trim())
     return {
       prompt: {
-        text: hintPrompt(context?.text),
+        text: Hint.prompt(context?.text),
         parts: [],
       },
     }
   } catch (error) {
-    if (error instanceof MissingHintContextError) return { error: error.message }
+    if (error instanceof Hint.MissingContextError) return { error: error.message }
     throw error
   }
 }
