@@ -25,6 +25,7 @@ import { Filesystem } from "@/util/filesystem"
 import { createOpencodeClient, type OpencodeClient, type ToolPart } from "@opencode-ai/sdk/v2"
 import { FormatError, FormatUnknownError } from "../error"
 import { INTERACTIVE_INPUT_ERROR, resolveInteractiveStdin } from "./run/runtime.stdin"
+import { hintPrompt, MissingHintContextError } from "./run/hint"
 
 type ModelInput = Parameters<OpencodeClient["session"]["prompt"]>[0]["model"]
 
@@ -143,6 +144,11 @@ export const RunCommand = effectCmd({
       .option("command", {
         describe: "the command to run, use message for args",
         type: "string",
+      })
+      .option("hint", {
+        describe: "request a debugging hint for the provided bug context",
+        type: "boolean",
+        default: false,
       })
       .option("continue", {
         alias: ["c"],
@@ -415,7 +421,21 @@ export const RunCommand = effectCmd({
 
       const piped = process.stdin.isTTY ? undefined : await Bun.stdin.text()
       message = resolveRunInput(message, piped) ?? ""
-      const initialInput = resolveRunInput(rawMessage, piped)
+      const resolvedInitialInput = resolveRunInput(rawMessage, piped)
+      const hinted = (() => {
+        if (!args.hint) return { message, initialInput: resolvedInitialInput }
+        try {
+          return {
+            message: hintPrompt(message),
+            initialInput: hintPrompt(resolvedInitialInput),
+          }
+        } catch (error) {
+          if (error instanceof MissingHintContextError) die(error.message)
+          throw error
+        }
+      })()
+      message = hinted.message
+      const initialInput = hinted.initialInput
 
       if (message.trim().length === 0 && !args.command && !interactive) {
         UI.error("You must provide a message or a command")
@@ -981,6 +1001,7 @@ export async function runMini(input: MiniCommandInput) {
     _: ["mini"],
     message: input.prompt ? [input.prompt] : [],
     command: undefined,
+    hint: false,
     continue: input.continue,
     session: input.session,
     fork: input.fork,
