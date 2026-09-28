@@ -1,19 +1,19 @@
 import { Hint } from "@opencode-ai/core/hint"
 import type { RunPrompt } from "./types"
 
-export function prepareHintPrompt(prompt: RunPrompt, history: RunPrompt[]) {
-  if (prompt.command?.name !== "hint") return { prompt }
-
-  try {
-    const context = history.findLast((item) => item.mode !== "shell" && item.text.trim())
+export function prepareHintPrompt(prompt: RunPrompt, enabled: boolean) {
+  if (prompt.command?.name === "hint") {
+    const next = !enabled
     return {
-      prompt: {
-        text: Hint.prompt(context?.text),
-        parts: [],
-      },
+      enabled: next,
+      notice: next ? "Hint mode enabled. Future responses will provide hints only." : "Hint mode disabled.",
     }
-  } catch (error) {
-    if (error instanceof Hint.MissingContextError) return { error: error.message }
-    throw error
+  }
+  if (!enabled || prompt.mode === "shell" || prompt.command) return { prompt }
+  return {
+    prompt: {
+      ...prompt,
+      text: Hint.prompt(prompt.text),
+    },
   }
 }

@@ -38,7 +38,7 @@ import { usePromptStash } from "../../prompt/stash"
 import { DialogStash } from "../dialog-stash"
 import { type AutocompleteRef, Autocomplete } from "./autocomplete"
 import { useRenderer, useTerminalDimensions, type JSX } from "@opentui/solid"
-import type { AssistantMessage, FilePart, TextPart, UserMessage } from "@opencode-ai/sdk/v2"
+import type { AssistantMessage, FilePart, UserMessage } from "@opencode-ai/sdk/v2"
 import { Locale } from "../../util/locale"
 import { errorMessage } from "../../util/error"
 import { formatDuration } from "../../util/format"
@@ -103,6 +103,8 @@ const money = new Intl.NumberFormat("en-US", {
 })
 
 const DRAFT_RETENTION_MIN_CHARS = 20
+const hintSessions = new Set<string>()
+let pendingHintMode = false
 
 function randomIndex(count: number) {
   if (count <= 0) return 0
@@ -261,6 +263,15 @@ export function Prompt(props: PromptProps) {
     if (!messages) return undefined
     return messages.findLast((m): m is UserMessage => m.role === "user")
   })
+  const [hintMode, setHintMode] = createSignal(props.sessionID ? hintSessions.has(props.sessionID) : pendingHintMode)
+
+  createEffect(() => {
+    const sessionID = props.sessionID
+    if (!sessionID || !pendingHintMode) return
+    pendingHintMode = false
+    hintSessions.add(sessionID)
+    setHintMode(true)
+  })
 
   const usage = createMemo(() => {
     if (!props.sessionID) return
@@ -359,31 +370,25 @@ export function Prompt(props: PromptProps) {
         },
       },
       {
-        title: "Get a debugging hint",
+        title: hintMode() ? "Disable hint mode" : "Enable hint mode",
         name: "session.hint",
         category: "Session",
         slashName: "hint",
-        run: async () => {
-          const message = lastUserMessage()
-          const context = message
-            ? (sync.data.part[message.id] ?? [])
-                .filter((part): part is TextPart => part.type === "text" && !part.synthetic)
-                .map((part) => part.text)
-                .join("\n")
-            : undefined
-
-          try {
-            const text = Hint.prompt(context)
-            input.setText(text)
-            input.extmarks.clear()
-            setStore("prompt", { input: text, parts: [] })
-            setStore("extmarkToPartIndex", new Map())
-            const handled = await submit()
-            if (handled) dialog.clear()
-          } catch (error) {
-            if (!(error instanceof Hint.MissingContextError)) throw error
-            toast.show({ variant: "warning", message: error.message })
+        run: () => {
+          const enabled = !hintMode()
+          setHintMode(enabled)
+          if (props.sessionID) {
+            if (enabled) hintSessions.add(props.sessionID)
+            if (!enabled) hintSessions.delete(props.sessionID)
+          } else {
+            pendingHintMode = enabled
           }
+          input.clear()
+          setStore("prompt", { input: "", parts: [] })
+          toast.show({
+            variant: "info",
+            message: enabled ? "Hint mode enabled. Future responses will provide hints only." : "Hint mode disabled.",
+          })
         },
       },
       {
@@ -1132,7 +1137,7 @@ export function Prompt(props: PromptProps) {
               ...editorParts,
               {
                 type: "text",
-                text: inputText,
+                text: hintMode() ? Hint.prompt(inputText) : inputText,
               },
               ...nonTextParts,
             ],

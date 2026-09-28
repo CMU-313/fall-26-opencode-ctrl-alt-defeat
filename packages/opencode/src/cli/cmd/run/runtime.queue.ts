@@ -27,7 +27,7 @@ export type QueueInput = {
   footer: FooterApi
   initialInput?: string
   trace?: Trace
-  preparePrompt?: (prompt: RunPrompt) => { prompt: RunPrompt } | { error: string }
+  preparePrompt?: (prompt: RunPrompt) => { prompt: RunPrompt } | { error: string } | { notice: string }
   onSend?: (prompt: RunPrompt) => void
   onNewSession?: () => void | Promise<void>
   run: (prompt: RunPrompt, signal: AbortSignal) => Promise<void>
@@ -276,6 +276,15 @@ export async function runPromptQueue(input: QueueInput): Promise<void> {
       input.footer.append({
         kind: "error",
         text: prepared.error,
+        phase: "final",
+        source: "system",
+      })
+      return
+    }
+    if ("notice" in prepared) {
+      input.footer.append({
+        kind: "system",
+        text: prepared.notice,
         phase: "final",
         source: "system",
       })

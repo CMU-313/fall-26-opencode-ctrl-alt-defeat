@@ -19,19 +19,20 @@ describe("run hint", () => {
     )
   })
 
-  test("routes /hint through the shared handler using the latest user context", () => {
+  test("enables hint mode through /hint", () => {
     const prompt: RunPrompt = {
       text: "/hint",
       parts: [],
       command: { name: "hint", arguments: "" },
     }
-    const history: RunPrompt[] = [
-      { text: "The first bug", parts: [] },
-      { text: "ignored shell command", parts: [], mode: "shell" },
-      { text: "The current bug", parts: [] },
-    ]
+    expect(prepareHintPrompt(prompt, false)).toEqual({
+      enabled: true,
+      notice: "Hint mode enabled. Future responses will provide hints only.",
+    })
+  })
 
-    expect(prepareHintPrompt(prompt, history)).toEqual({
+  test("routes prompts through the shared handler while hint mode is enabled", () => {
+    expect(prepareHintPrompt({ text: "The current bug", parts: [] }, true)).toEqual({
       prompt: {
         text: Hint.prompt("The current bug"),
         parts: [],
@@ -39,15 +40,13 @@ describe("run hint", () => {
     })
   })
 
-  test("returns a non-throwing error for /hint without session context", () => {
+  test("disables hint mode when /hint is invoked again", () => {
     const prompt: RunPrompt = {
       text: "/hint",
       parts: [],
       command: { name: "hint", arguments: "" },
     }
 
-    expect(prepareHintPrompt(prompt, [])).toEqual({
-      error: "No bug context available. Describe the bug before asking for a hint.",
-    })
+    expect(prepareHintPrompt(prompt, true)).toEqual({ enabled: false, notice: "Hint mode disabled." })
   })
 })

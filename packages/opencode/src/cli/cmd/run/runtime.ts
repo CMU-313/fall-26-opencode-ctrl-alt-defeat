@@ -545,6 +545,7 @@ async function runInteractiveRuntime(input: RunRuntimeInput, deps: RunRuntimeDep
 
   const runQueue = async () => {
     let includeFiles = true
+    let hintMode = false
     if (state.demo) {
       await state.demo.start()
     }
@@ -555,7 +556,11 @@ async function runInteractiveRuntime(input: RunRuntimeInput, deps: RunRuntimeDep
       footer,
       initialInput: input.initialInput,
       trace: log,
-      preparePrompt: (prompt) => prepareHintPrompt(prompt, state.history),
+      preparePrompt: (prompt) => {
+        const prepared = prepareHintPrompt(prompt, hintMode)
+        if ("enabled" in prepared) hintMode = prepared.enabled
+        return prepared
+      },
       onSend: (prompt) => {
         state.shown = true
         state.history.push(prompt)
@@ -572,6 +577,7 @@ async function runInteractiveRuntime(input: RunRuntimeInput, deps: RunRuntimeDep
       onNewSession: createSession
         ? async () => {
             try {
+              hintMode = false
               await state.switching?.catch(() => {})
               const created = await createSession(ctx, {
                 agent: state.agent,

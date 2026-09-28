@@ -128,6 +128,36 @@ describe("run runtime queue", () => {
     await task
   })
 
+  test("shows prompt preparation notices without running or closing the session", async () => {
+    const ui = footer()
+    let calls = 0
+
+    const task = runPromptQueue({
+      footer: ui.api,
+      preparePrompt: () => ({ notice: "Hint mode enabled." }),
+      run: async () => {
+        calls += 1
+      },
+    })
+
+    ui.submit("/hint")
+    await Promise.resolve()
+
+    expect(calls).toBe(0)
+    expect(ui.api.isClosed).toBe(false)
+    expect(ui.commits).toEqual([
+      {
+        kind: "system",
+        text: "Hint mode enabled.",
+        phase: "final",
+        source: "system",
+      },
+    ])
+
+    ui.api.close()
+    await task
+  })
+
   test("treats /exit as a close command", async () => {
     const ui = footer()
     let calls = 0
