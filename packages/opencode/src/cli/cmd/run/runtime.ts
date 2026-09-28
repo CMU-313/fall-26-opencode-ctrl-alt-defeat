@@ -558,7 +558,7 @@ async function runInteractiveRuntime(input: RunRuntimeInput, deps: RunRuntimeDep
       trace: log,
       preparePrompt: (prompt) => {
         const prepared = prepareHintPrompt(prompt, hintMode)
-        if ("enabled" in prepared) hintMode = prepared.enabled
+        if ("enabled" in prepared && typeof prepared.enabled === "boolean") hintMode = prepared.enabled
         return prepared
       },
       onSend: (prompt) => {
