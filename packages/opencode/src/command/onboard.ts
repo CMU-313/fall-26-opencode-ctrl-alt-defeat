@@ -97,6 +97,36 @@ const WALK_IGNORED = new Set([".git", "node_modules", "vendor", "dist", "build",
 
 const TEST = /(^|\/)(test|tests|__tests__|spec|e2e)\/|\.(test|spec)\.[a-z]+$|_test\.(go|py)$|(^|\/)test_[^/]+\.py$/
 
+const MANIFESTS = new Set([
+  "package.json",
+  "Cargo.toml",
+  "go.mod",
+  "pyproject.toml",
+  "setup.py",
+  "requirements.txt",
+  "Gemfile",
+  "pom.xml",
+  "build.gradle",
+  "build.gradle.kts",
+  "composer.json",
+  "mix.exs",
+  "pubspec.yaml",
+  "Package.swift",
+  "Dockerfile",
+  "docker-compose.yml",
+  "compose.yaml",
+  "flake.nix",
+  "Makefile",
+  "justfile",
+  "turbo.json",
+  "nx.json",
+  "pnpm-workspace.yaml",
+])
+
+const CI = /^(\.github\/workflows\/|\.gitlab-ci\.yml$|\.circleci\/|azure-pipelines\.yml$|Jenkinsfile$|\.buildkite\/)/
+
+const DOCS = /^((README|CONTRIBUTING|AGENTS|CLAUDE|ARCHITECTURE|CHANGELOG|SECURITY|TESTING|ONBOARDING)[^/]*|docs?\/.+)$/i
+
 // Monorepo container directories are summarised one level deeper so each package gets its own row.
 const CONTAINERS = new Set(["packages", "apps", "libs", "services", "crates", "modules", "plugins", "tools"])
 
@@ -108,6 +138,7 @@ export async function analyze(dir: string) {
   )
   const sources = await measureSources(dir, included)
   const lines = sources.reduce((sum, item) => sum + item.lines, 0)
+  const git = listing.git ? await history(dir, new Set(included)) : undefined
 
   return {
     files: listing.files.length,
@@ -122,6 +153,13 @@ export async function analyze(dir: string) {
       .slice(0, TOP)
       .map((item) => ({ path: item.path, lines: item.lines })),
     tests: sources.filter((item) => TEST.test(item.path)).length,
+    manifests: included
+      .filter((file) => MANIFESTS.has(path.posix.basename(file)) && file.split("/").length <= 3)
+      .toSorted((a, b) => a.split("/").length - b.split("/").length || a.localeCompare(b)),
+    scripts: await scripts(dir),
+    ci: included.filter((file) => CI.test(file)),
+    docs: included.filter((file) => DOCS.test(file)),
+    git,
   }
 }
 
@@ -227,4 +265,55 @@ function directories(sources: { path: string; lines: number }[]) {
     }))
     .toSorted((a, b) => b.lines - a.lines)
     .slice(0, 15)
+}
+
+async function scripts(dir: string) {
+  const pkg = await Bun.file(path.join(dir, "package.json"))
+    .json()
+    .catch(() => undefined)
+  const npm = Object.entries(
+    pkg && typeof pkg === "object" && typeof pkg.scripts === "object" && pkg.scripts ? pkg.scripts : {},
+  )
+    .filter((entry): entry is [string, string] => typeof entry[1] === "string")
+    .map(([name, command]) => ({ source: "package.json", name, command }))
+  const targets = await Promise.all(
+    ["Makefile", "justfile"].map(async (source) => {
+      const text = await Bun.file(path.join(dir, source))
+        .text()
+        .catch(() => "")
+      return [...text.matchAll(/^([A-Za-z0-9][A-Za-z0-9_.-]*)\s*(?:[^:=\n]*)?:(?!=)/gm)]
+        .map((match) => ({ source, name: match[1], command: "" }))
+    }),
+  )
+  return [...npm, ...targets.flat()].slice(0, 40)
+}
+
+async function history(dir: string, files: Set<string>) {
+  const git = (args: string[]) =>
+    Process.text(["git", "-c", "core.quotepath=false", ...args], { cwd: dir, nothrow: true }).then((result) =>
+      result.code === 0 ? result.text.trim() : "",
+    )
+  const [commits, contributors, roots, last, recent] = await Promise.all([
+    git(["rev-list", "--count", "HEAD"]),
+    git(["shortlog", "-sn", "--no-merges", "HEAD"]),
+    git(["log", "--max-parents=0", "--format=%cs", "HEAD"]),
+    git(["log", "-1", "--format=%cs", "HEAD"]),
+    git(["log", "--since=90.days.ago", "--no-merges", "--name-only", "--format=", "HEAD"]),
+  ])
+  const changes = Map.groupBy(
+    recent.split("\n").filter((file) => files.has(file)),
+    (file) => file,
+  )
+  return {
+    commits: Number(commits) || 0,
+    contributors: contributors.split("\n").filter(Boolean).length,
+    first: roots.split("\n").filter(Boolean).toSorted()[0] ?? "",
+    last,
+    // A file touched once is not a signal, and squashed imports would otherwise list arbitrary files.
+    hot: [...changes.entries()]
+      .map(([file, items]) => ({ path: file, changes: items.length }))
+      .filter((item) => item.changes > 1)
+      .toSorted((a, b) => b.changes - a.changes)
+      .slice(0, TOP),
+  }
 }
