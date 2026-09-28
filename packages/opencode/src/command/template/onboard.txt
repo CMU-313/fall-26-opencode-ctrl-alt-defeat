@@ -1,0 +1,51 @@
+Produce an onboarding guide for the repository at `${path}` and save it to `${path}/ONBOARDING.md`.
+
+The reader is a developer who has never seen this codebase. They know how to program but know nothing about this project, its domain, or its conventions. Your job is to get them from "I just cloned this" to "I know where things are and can make a first change safely."
+
+User-provided focus or constraints (honor these; if they name a directory or topic, go deeper there):
+$ARGUMENTS
+
+## Measured facts (ground truth)
+
+The following was computed by a script before you started. Treat these numbers as exact: quote them, do not recount files, lines, or languages yourself, and do not contradict them. Use them to decide where to spend your reading time: the directories with the most code, the most frequently changed files, and the manifests are the best starting points.
+
+${facts}
+
+## How to investigate
+
+Work from the highest-signal sources to the lowest:
+1. `README*`, existing docs listed above, and any `AGENTS.md`/`CLAUDE.md`/`CONTRIBUTING.md`.
+2. Root and workspace manifests listed above: what the project depends on, how packages relate, and which scripts exist.
+3. Entrypoints: the `main`/`bin`/`exports` fields, `src/index.*`, `main.*`, `cmd/`, server bootstrap files, CLI definitions.
+4. The largest and most frequently changed files: these are usually the core of the system and where active work happens.
+5. CI workflows: they reveal the real build, lint, typecheck, and test commands.
+
+Prefer executable sources of truth over prose. If docs disagree with scripts or config, trust the scripts and note the discrepancy. Read enough to be accurate, but do not read every file: sample representative files per major directory.
+
+## What to write
+
+Write `ONBOARDING.md` with these sections, in this order. Skip a section only if it genuinely does not apply.
+
+1. **What this project is**: one short paragraph covering what it does, who uses it, and what problem it solves. Plain language, no marketing.
+2. **At a glance**: file count, lines of code, language breakdown, test file count, and repository age/activity, taken from the measured facts. Keep this compact (a short table or bullet list).
+3. **Architecture**: the major components or packages, what each is responsible for, and how they depend on or talk to each other. Include a small mermaid diagram if there are more than three interacting parts.
+4. **Directory guide**: the top-level (and, for monorepos, package-level) directories that matter, one line each. Not an exhaustive tree.
+5. **How it works: one traced flow**: pick the most central user action (e.g. running the CLI, handling a request, rendering a page) and trace it through 4–8 files with `path:line` references, explaining what each step does.
+6. **Getting started**: prerequisites, install, build, run, test, lint, and typecheck commands. Every command must come from a script, CI workflow, or doc you actually read; say where it comes from. Call out non-obvious requirements (env vars, services, codegen steps, required working directory).
+7. **Key concepts and glossary**: domain terms and project-specific abstractions a newcomer will see in the code and not understand, each with a one-line definition and where it is defined.
+8. **Conventions and gotchas**: generated code that must not be edited by hand, codegen or migration steps, unusual style rules, testing quirks, and any place where docs and code disagree.
+9. **Where active work happens**: interpret the most frequently changed files from the measured facts: what area of the system they belong to and what that suggests.
+10. **Suggested first reading**: 5–10 files to read in order, each with one line on why.
+
+## Writing rules
+
+- Be specific to this repository. Leave out generic software advice and anything true of every project.
+- Cite files as `path` or `path:line` so the reader can jump to them.
+- If something is unclear after investigating, say it is unclear rather than guessing.
+- Keep it scannable: short paragraphs, bullets, and tables. Aim for something a newcomer can read in 10–15 minutes.
+
+## Saving
+
+If `${path}/ONBOARDING.md` already exists, read it first and update it in place: keep accurate content, fix stale claims, and refresh the measured numbers. Otherwise create it. If you are not permitted to write files, say so and skip saving.
+
+Your final response is shown to the user. Reply with the full contents of the guide, followed by one line stating where it was saved.

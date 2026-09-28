@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { $ } from "bun"
 import path from "path"
-import { Effect, Layer } from "effect"
+import { Effect, Layer, Schema } from "effect"
 import { AppNodeBuilder } from "@opencode-ai/core/effect/app-node-builder"
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
@@ -86,26 +86,35 @@ describe("Onboard.analyze", () => {
     expect(stats.files).toBe(1)
     expect(stats.languages.map((item) => item.name)).toEqual(["Go"])
     expect(stats.git).toBeUndefined()
+    expect(Onboard.render(stats)).toContain("not a git repository")
   })
 })
 
 describe("Command onboarding", () => {
-  it.live("registers the onboard slash command and placeholder flow", () =>
+  it.live("registers the onboard subtask with measured facts in its prompt", () =>
     Effect.gen(function* () {
-      const dir = yield* tmpdirScoped()
+      const dir = yield* tmpdirScoped({ git: true, init: (dir) => Effect.promise(() => seed(dir)) })
       const commands = yield* Command.Service
-      const names = (yield* commands.list().pipe(provideInstanceEffect(dir))).map((item) => item.name)
-
-      expect(names).toContain("onboard")
-
       const onboard = yield* commands.get("onboard").pipe(provideInstanceEffect(dir))
 
-      expect(onboard).toMatchObject({
-        name: "onboard",
-        source: "command",
-      })
-      expect(onboard?.description).toContain("onboarding")
-      expect(onboard?.template).toContain("placeholder")
+      expect(onboard).toMatchObject({ name: "onboard", source: "command", subtask: true, hints: ["$ARGUMENTS"] })
+      expect(onboard?.description).toContain("ONBOARDING.md")
+
+      const template = yield* Effect.promise(async () => onboard?.template ?? "")
+      expect(template).toContain(`${dir}/ONBOARDING.md`)
+      expect(template).toContain("| TypeScript | 4 | 6 | 50% |")
+      expect(template).not.toContain("${facts}")
+    }),
+  )
+
+  it.live("keeps the command list JSON-encodable without scanning the repository", () =>
+    Effect.gen(function* () {
+      const dir = yield* tmpdirScoped({ git: true })
+      const commands = yield* Command.Service
+      const list = yield* commands.list().pipe(provideInstanceEffect(dir))
+
+      // Mirrors the command.list HTTP response encoding, which rejects non-JSON template values.
+      expect(() => Schema.encodeUnknownSync(Schema.toCodecJson(Schema.Array(Command.Info)))(list)).not.toThrow()
     }),
   )
 })

@@ -4,6 +4,7 @@ import fs from "fs/promises"
 import path from "path"
 import { Glob } from "@opencode-ai/core/util/glob"
 import { Process } from "@/util/process"
+import PROMPT_ONBOARD from "./template/onboard.txt"
 
 // Deterministic repository facts for the /onboard command. The LLM is bad at counting, so everything
 // countable is measured here and injected into the prompt as ground truth.
@@ -130,6 +131,28 @@ const DOCS = /^((README|CONTRIBUTING|AGENTS|CLAUDE|ARCHITECTURE|CHANGELOG|SECURI
 // Monorepo container directories are summarised one level deeper so each package gets its own row.
 const CONTAINERS = new Set(["packages", "apps", "libs", "services", "crates", "modules", "plugins", "tools"])
 
+export const PROMPT = PROMPT_ONBOARD
+
+// Listing commands serialises every template, so the scan must wait until the prompt awaits it. `then` lives on the
+// prototype so JSON encoding sees an empty object, as it does for the Promise templates MCP prompts use.
+export class Template implements PromiseLike<string> {
+  readonly #root: string
+
+  constructor(root: string) {
+    this.#root = root
+  }
+
+  // oxlint-disable-next-line no-thenable -- intentional lazy thenable.
+  then<A = string, B = never>(
+    resolve?: ((value: string) => A | PromiseLike<A>) | null,
+    reject?: ((reason: unknown) => B | PromiseLike<B>) | null,
+  ) {
+    return analyze(this.#root)
+      .then((stats) => PROMPT.replaceAll("${path}", this.#root).replace("${facts}", render(stats)))
+      .then(resolve, reject)
+  }
+}
+
 export async function analyze(dir: string) {
   const listing = await listFiles(dir)
   const attributes = await excludedByAttributes(dir)
@@ -161,6 +184,81 @@ export async function analyze(dir: string) {
     docs: included.filter((file) => DOCS.test(file)),
     git,
   }
+}
+
+export type Stats = Awaited<ReturnType<typeof analyze>>
+
+export function render(stats: Stats) {
+  const number = (value: number) => value.toLocaleString("en-US")
+  const list = (items: string[], limit = 30) =>
+    items.length === 0
+      ? "- none found"
+      : [
+          ...items.slice(0, limit).map((item) => `- \`${item}\``),
+          ...(items.length > limit ? [`- …and ${number(items.length - limit)} more`] : []),
+        ].join("\n")
+  const table = (header: string[], rows: string[][]) =>
+    rows.length === 0
+      ? "_none_"
+      : [
+          `| ${header.join(" | ")} |`,
+          `| ${header.map(() => "---").join(" | ")} |`,
+          ...rows.map((row) => `| ${row.join(" | ")} |`),
+        ].join("\n")
+
+  return [
+    "### Size",
+    `- Files in repository (git-tracked plus untracked, respecting .gitignore): ${number(stats.files)}${stats.truncated ? ` (listing capped at ${number(MAX_FILES)})` : ""}`,
+    `- Excluded as lockfiles, build output, vendored or generated: ${number(stats.excluded)}`,
+    `- Source files in a recognised language: ${number(stats.sourceFiles)}`,
+    `- Lines of source code: ${number(stats.lines)}`,
+    `- Test files: ${number(stats.tests)} (${stats.sourceFiles === 0 ? 0 : Math.round((stats.tests / stats.sourceFiles) * 100)}% of source files)`,
+    "",
+    "### Language breakdown (share of source lines)",
+    table(
+      ["Language", "Files", "Lines", "Share"],
+      stats.languages.map((item) => [item.name, number(item.files), number(item.lines), `${item.percent}%`]),
+    ),
+    "",
+    "### Where the code lives (directories by source lines)",
+    table(
+      ["Directory", "Files", "Lines"],
+      stats.directories.map((item) => [`\`${item.path}\``, number(item.files), number(item.lines)]),
+    ),
+    "",
+    "### Largest source files",
+    table(
+      ["File", "Lines"],
+      stats.largest.map((item) => [`\`${item.path}\``, number(item.lines)]),
+    ),
+    "",
+    "### Manifests and toolchain files",
+    list(stats.manifests),
+    "",
+    "### Declared scripts and task targets",
+    stats.scripts.length === 0
+      ? "- none found"
+      : stats.scripts.map((item) => `- \`${item.source}\` → \`${item.name}\`${item.command ? `: \`${item.command}\`` : ""}`).join("\n"),
+    "",
+    "### CI configuration",
+    list(stats.ci),
+    "",
+    "### Documentation files",
+    list(stats.docs),
+    "",
+    "### Git history",
+    stats.git
+      ? [
+          `- Commits on HEAD: ${number(stats.git.commits)}`,
+          `- Contributors: ${number(stats.git.contributors)}`,
+          `- First commit: ${stats.git.first || "unknown"}; latest commit: ${stats.git.last || "unknown"}`,
+          "- Most frequently changed files in the last 90 days:",
+          stats.git.hot.length === 0
+            ? "  - none changed more than once"
+            : stats.git.hot.map((item) => `  - \`${item.path}\` (${item.changes} commits)`).join("\n"),
+        ].join("\n")
+      : "- not a git repository",
+  ].join("\n")
 }
 
 async function listFiles(dir: string) {
