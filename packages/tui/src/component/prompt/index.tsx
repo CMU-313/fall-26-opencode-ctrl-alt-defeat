@@ -15,7 +15,7 @@ import path from "path"
 import { fileURLToPath } from "url"
 import { useLocal } from "../../context/local"
 import { Flag } from "@opencode-ai/core/flag/flag"
-import { Hint } from "@opencode-ai/core/hint"
+import { createHintMode, hintText } from "../../hint"
 import { tint, useTheme } from "../../context/theme"
 import { EmptyBorder, SplitBorder } from "../../ui/border"
 import { useTuiPaths, useTuiTerminalEnvironment } from "../../context/runtime"
@@ -103,8 +103,7 @@ const money = new Intl.NumberFormat("en-US", {
 })
 
 const DRAFT_RETENTION_MIN_CHARS = 20
-const hintSessions = new Set<string>()
-let pendingHintMode = false
+const sessionHintMode = createHintMode()
 
 function randomIndex(count: number) {
   if (count <= 0) return 0
@@ -263,14 +262,11 @@ export function Prompt(props: PromptProps) {
     if (!messages) return undefined
     return messages.findLast((m): m is UserMessage => m.role === "user")
   })
-  const [hintMode, setHintMode] = createSignal(props.sessionID ? hintSessions.has(props.sessionID) : pendingHintMode)
+  const [hintMode, setHintMode] = createSignal(sessionHintMode.enabled(props.sessionID))
 
   createEffect(() => {
     const sessionID = props.sessionID
-    if (!sessionID || !pendingHintMode) return
-    pendingHintMode = false
-    hintSessions.add(sessionID)
-    setHintMode(true)
+    if (sessionID && sessionHintMode.attach(sessionID)) setHintMode(true)
   })
 
   const usage = createMemo(() => {
@@ -375,14 +371,8 @@ export function Prompt(props: PromptProps) {
         category: "Session",
         slashName: "hint",
         run: () => {
-          const enabled = !hintMode()
+          const enabled = sessionHintMode.toggle(props.sessionID)
           setHintMode(enabled)
-          if (props.sessionID) {
-            if (enabled) hintSessions.add(props.sessionID)
-            if (!enabled) hintSessions.delete(props.sessionID)
-          } else {
-            pendingHintMode = enabled
-          }
           input.clear()
           setStore("prompt", { input: "", parts: [] })
           toast.show({
@@ -1137,7 +1127,7 @@ export function Prompt(props: PromptProps) {
               ...editorParts,
               {
                 type: "text",
-                text: hintMode() ? Hint.prompt(inputText) : inputText,
+                text: hintText(inputText, hintMode()),
               },
               ...nonTextParts,
             ],
