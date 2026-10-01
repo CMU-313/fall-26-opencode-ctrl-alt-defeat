@@ -1,69 +1,55 @@
-# User Guide
+## Onboarding Mode
 
-## Hint mode
+### What it does
 
-Hint mode asks OpenCode to provide concise debugging guidance without giving away a complete solution. It is available in the standard terminal interface, the mini terminal interface, and as a one-time CLI option.
+The `/onboard` command generates a plain language overview of a repository's
+architecture to help new contributors get oriented faster.
 
-### Interactive use
+### How to use it
 
-Start the standard interface from the repository root:
+[Replace with the real current usage instructions — what the finished command
+actually outputs now]
 
-```bash
-bun dev
-```
+### How to test it (manual/user testing)
 
-Enter `/hint` to enable hint mode. OpenCode displays a confirmation, and each subsequent prompt is sent as a hint request. Enter `/hint` again to disable the mode. Hint mode applies only to the current session.
-
-The same workflow is available in the mini interface:
-
-```bash
-bun dev -- --mini
-```
-
-### One-time CLI use
-
-Pass a bug description to `run --hint` to request one hint without enabling an interactive mode:
-
-```bash
-bun dev -- run --hint "The save button crashes after retrying"
-```
-
-Calling `run --hint` without a bug description exits with a clear error instead of sending an empty request.
-
-### Manual verification
-
-1. Run `bun dev`, enter `/hint`, and confirm that the enabled message appears.
-2. Submit a bug description and confirm that the response gives guidance rather than a complete solution.
-3. Enter `/hint` again and confirm that the disabled message appears.
-4. Repeat the toggle flow with `bun dev -- --mini`.
-5. Run `bun dev -- run --hint` without a description and confirm that the missing-context error appears.
-
-Successful model responses require a configured provider. OpenCode-hosted free-tier models may reject requests from development builds, but the automated CLI tests use a local test provider.
+[Replace with steps to verify the real output]
 
 ### Automated tests
 
-The focused tests are located at:
+**Command scaffolding tests** — `packages/opencode/test/command/onboard.test.ts`
 
-- `packages/opencode/test/cli/run/hint.test.ts`: shared prompt construction, missing CLI context, hint-mode enable/disable behavior, and prompt transformation.
-- `packages/opencode/test/cli/run/runtime.queue.test.ts`: mode status messages are displayed without sending a model request or closing the session.
-- `packages/opencode/test/cli/run/run-process.test.ts`: end-to-end `run --hint` behavior with and without bug context.
-- `packages/opencode/test/cli/help/help-snapshots.test.ts`: documents and protects the public `--hint` CLI option.
-- `packages/tui/test/hint.test.ts`: standard-TUI session isolation, enable/disable state, new-session handoff, and prompt transformation.
+## Hint Mode
 
-Run the focused verification from `packages/opencode`:
+### What it does
 
-```bash
-bun test test/cli/run/hint.test.ts test/cli/run/runtime.queue.test.ts
-bun test test/cli/run/run-process.test.ts
-bun test test/cli/help/help-snapshots.test.ts
-bun typecheck
-```
+The `/hint` command toggles a session mode that asks OpenCode to provide concise
+debugging guidance instead of complete solutions. The `run --hint` flag provides
+the same behavior for a single CLI request.
 
-Then verify the shared core and TUI packages:
+### How to use it
+
+Run `bun dev` or `bun dev -- --mini`, then enter `/hint` to enable hint mode.
+Enter `/hint` again to disable it. For a one-time hint, run:
 
 ```bash
-cd ../core && bun typecheck
-cd ../tui && bun test test/hint.test.ts && bun typecheck
+bun dev -- run --hint "Describe the bug here"
 ```
 
-Together, these tests cover the shared handler, both mode transitions, transformed prompts, queue behavior, CLI argument handling, validation errors, and the documented command-line interface.
+### How to test it (manual/user testing)
+
+1. Enter `/hint` and confirm that OpenCode reports that hint mode is enabled.
+2. Submit a bug description and confirm that the response provides guidance
+   rather than a complete solution.
+3. Enter `/hint` again and confirm that hint mode is disabled.
+4. Run `bun dev -- run --hint` without a description and confirm that it exits
+   with a clear missing-context error.
+
+### Automated tests
+
+**Shared handler and mini-mode tests** — `packages/opencode/test/cli/run/hint.test.ts`
+
+**Interactive queue tests** — `packages/opencode/test/cli/run/runtime.queue.test.ts`
+
+**CLI subprocess tests** — `packages/opencode/test/cli/run/run-process.test.ts`
+
+**Standard TUI session-mode tests** — `packages/tui/test/hint.test.ts`
