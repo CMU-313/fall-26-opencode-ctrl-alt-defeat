@@ -361,7 +361,12 @@ function directories(sources: { path: string; lines: number }[]) {
       files: items.length,
       lines: items.reduce((sum, item) => sum + item.lines, 0),
     }))
-    .toSorted((a, b) => b.lines - a.lines)
+    .toSorted(
+      (a, b) =>
+        b.lines - a.lines ||
+        Number(a.path === "(root)") - Number(b.path === "(root)") ||
+        (a.path < b.path ? -1 : a.path > b.path ? 1 : 0),
+    )
     .slice(0, 15)
 }
 
