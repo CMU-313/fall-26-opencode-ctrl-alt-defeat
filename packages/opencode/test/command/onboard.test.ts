@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { $ } from "bun"
+import fs from "fs/promises"
 import path from "path"
 import { Effect, Layer, Schema } from "effect"
 import { AppNodeBuilder } from "@opencode-ai/core/effect/app-node-builder"
@@ -88,9 +89,234 @@ describe("Onboard.analyze", () => {
     expect(stats.git).toBeUndefined()
     expect(Onboard.render(stats)).toContain("not a git repository")
   })
+
+  test("returns empty facts and renders them for an empty repository", async () => {
+    await using dir = await tmpdir()
+    const stats = await Onboard.analyze(dir.path)
+
+    expect(stats).toEqual({
+      files: 0,
+      truncated: false,
+      excluded: 0,
+      sourceFiles: 0,
+      lines: 0,
+      languages: [],
+      directories: [],
+      largest: [],
+      tests: 0,
+      manifests: [],
+      scripts: [],
+      ci: [],
+      docs: [],
+      git: undefined,
+    })
+    expect(Onboard.render(stats)).toBe(
+      [
+        "### Size",
+        "- Files in repository (git-tracked plus untracked, respecting .gitignore): 0",
+        "- Excluded as lockfiles, build output, vendored or generated: 0",
+        "- Source files in a recognised language: 0",
+        "- Lines of source code: 0",
+        "- Test files: 0 (0% of source files)",
+        "",
+        "### Language breakdown (share of source lines)",
+        "_none_",
+        "",
+        "### Where the code lives (directories by source lines)",
+        "_none_",
+        "",
+        "### Largest source files",
+        "_none_",
+        "",
+        "### Manifests and toolchain files",
+        "- none found",
+        "",
+        "### Declared scripts and task targets",
+        "- none found",
+        "",
+        "### CI configuration",
+        "- none found",
+        "",
+        "### Documentation files",
+        "- none found",
+        "",
+        "### Git history",
+        "- not a git repository",
+      ].join("\n"),
+    )
+  })
+
+  test("returns empty facts when the repository path does not exist", async () => {
+    await using dir = await tmpdir()
+    const stats = await Onboard.analyze(path.join(dir.path, "missing"))
+
+    expect(stats).toMatchObject({
+      files: 0,
+      truncated: false,
+      excluded: 0,
+      sourceFiles: 0,
+      lines: 0,
+      languages: [],
+      directories: [],
+      largest: [],
+      tests: 0,
+      manifests: [],
+      scripts: [],
+      ci: [],
+      docs: [],
+      git: undefined,
+    })
+  })
+
+  test("skips tracked files that have been deleted", async () => {
+    await using dir = await tmpdir({
+      git: true,
+      init: async (directory) => {
+        await Bun.write(path.join(directory, "src/missing.py"), "print('tracked')\n")
+        await $`git add -A && git commit -m seed`.cwd(directory).quiet()
+        await fs.unlink(path.join(directory, "src/missing.py"))
+      },
+    })
+    const stats = await Onboard.analyze(dir.path)
+
+    expect(stats.files).toBe(1)
+    expect(stats.excluded).toBe(0)
+    expect(stats.sourceFiles).toBe(0)
+    expect(stats.languages).toEqual([])
+  })
+
+  test("recognizes Python manifests and test files", async () => {
+    await using dir = await tmpdir({
+      init: async (directory) => {
+        await Bun.write(path.join(directory, "pyproject.toml"), "[project]\nname = 'fixture'\n")
+        await Bun.write(path.join(directory, "app.py"), "def main():\n    return 1\n")
+        await Bun.write(path.join(directory, "tests/test_app.py"), "def test_main(): pass\n")
+      },
+    })
+    const stats = await Onboard.analyze(dir.path)
+
+    expect(stats.languages).toEqual([{ name: "Python", files: 2, lines: 3, percent: 100 }])
+    expect(stats.tests).toBe(1)
+    expect(stats.manifests).toEqual(["pyproject.toml"])
+  })
+
+  test("includes hidden files but skips ignored directories in a large, deep tree", async () => {
+    await using dir = await tmpdir({
+      init: async (directory) => {
+        const deep = path.join(directory, "src", ...Array.from({ length: 24 }, (_, index) => `level-${index}`))
+        await Promise.all([
+          Bun.write(path.join(directory, ".hidden.ts"), "export const hidden = true\n"),
+          Bun.write(path.join(directory, ".config/settings.py"), "print('config')"),
+          Bun.write(path.join(directory, "node_modules/dep/index.js"), "module.exports = 1\n"),
+          Bun.write(path.join(directory, ".git/ignored.ts"), "export const ignored = true\n"),
+          Bun.write(path.join(directory, "vendor/ignored.py"), "print('ignored')\n"),
+          Bun.write(path.join(directory, "dist/ignored.ts"), "export const ignored = true\n"),
+          ...Array.from({ length: 120 }, (_, index) =>
+            Bun.write(path.join(deep, `file-${index}.ts`), "export const value = 1\n"),
+          ),
+        ])
+      },
+    })
+    const first = await Onboard.analyze(dir.path)
+    const second = await Onboard.analyze(dir.path)
+
+    expect(first).toEqual(second)
+    expect(first.files).toBe(122)
+    expect(first.sourceFiles).toBe(122)
+    expect(first.lines).toBe(122)
+    expect(first.languages).toEqual([
+      { name: "TypeScript", files: 121, lines: 121, percent: 99.2 },
+      { name: "Python", files: 1, lines: 1, percent: 0.8 },
+    ])
+    expect(first.directories).toEqual([
+      { path: "src/", files: 120, lines: 120 },
+      { path: ".config/", files: 1, lines: 1 },
+      { path: "(root)", files: 1, lines: 1 },
+    ])
+    expect(first.largest).toHaveLength(10)
+  })
+
+  test("returns sensible defaults for an unrecognized repository", async () => {
+    await using dir = await tmpdir({
+      init: async (directory) => {
+        await Bun.write(path.join(directory, "notes.txt"), "plain text\n")
+      },
+    })
+    const stats = await Onboard.analyze(dir.path)
+
+    expect(stats.files).toBe(1)
+    expect(stats.sourceFiles).toBe(0)
+    expect(stats.languages).toEqual([])
+    expect(stats.manifests).toEqual([])
+    expect(stats.scripts).toEqual([])
+  })
+
+  test("renders populated facts in a stable Markdown format", async () => {
+    await using dir = await tmpdir({
+      init: async (directory) => {
+        await Bun.write(path.join(directory, "README.md"), "# Fixture\n")
+        await Bun.write(
+          path.join(directory, "package.json"),
+          JSON.stringify({ scripts: { test: "bun test" } }),
+        )
+        await Bun.write(path.join(directory, "index.ts"), "export const value = 1\n")
+      },
+    })
+    const stats = await Onboard.analyze(dir.path)
+    const output = Onboard.render(stats)
+
+    expect(output).toBe(
+      [
+        "### Size",
+        "- Files in repository (git-tracked plus untracked, respecting .gitignore): 3",
+        "- Excluded as lockfiles, build output, vendored or generated: 0",
+        "- Source files in a recognised language: 1",
+        "- Lines of source code: 1",
+        "- Test files: 0 (0% of source files)",
+        "",
+        "### Language breakdown (share of source lines)",
+        "| Language | Files | Lines | Share |",
+        "| --- | --- | --- | --- |",
+        "| TypeScript | 1 | 1 | 100% |",
+        "",
+        "### Where the code lives (directories by source lines)",
+        "| Directory | Files | Lines |",
+        "| --- | --- | --- |",
+        "| `(root)` | 1 | 1 |",
+        "",
+        "### Largest source files",
+        "| File | Lines |",
+        "| --- | --- |",
+        "| `index.ts` | 1 |",
+        "",
+        "### Manifests and toolchain files",
+        "- `package.json`",
+        "",
+        "### Declared scripts and task targets",
+        "- `package.json` → `test`: `bun test`",
+        "",
+        "### CI configuration",
+        "- none found",
+        "",
+        "### Documentation files",
+        "- `README.md`",
+        "",
+        "### Git history",
+        "- not a git repository",
+      ].join("\n"),
+    )
+  })
 })
 
 describe("Command onboarding", () => {
+  test("loads the onboarding prompt from its text resource", async () => {
+    const resource = await Bun.file(new URL("../../src/command/template/onboard.txt", import.meta.url)).text()
+
+    expect(Onboard.PROMPT).toBe(resource)
+    expect(resource).toContain("${path}/ONBOARDING.md")
+    expect(resource).toContain("${facts}")
+  })
+
   it.live("registers the onboard subtask with measured facts in its prompt", () =>
     Effect.gen(function* () {
       const dir = yield* tmpdirScoped({ git: true, init: (dir) => Effect.promise(() => seed(dir)) })
