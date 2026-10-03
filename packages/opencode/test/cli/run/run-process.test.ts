@@ -22,6 +22,31 @@ const cliItConcurrent = ((name, body, opts) => cliIt.concurrent(name, throttle(b
 const cliItLive = ((name, body, opts) => cliIt.live(name, throttle(body), opts)) as typeof cliIt.live
 
 describe("opencode run (non-interactive subprocess)", () => {
+  cliItConcurrent(
+    "accepts --hint with bug context",
+    ({ llm, opencode }) =>
+      Effect.gen(function* () {
+        yield* llm.text("check the retry boundary")
+        const result = yield* opencode.run("saving fails after a retry", { extraArgs: ["--hint"] })
+
+        opencode.expectExit(result, 0)
+        expect(result.stdout).toBe("check the retry boundary\n")
+      }),
+    60_000,
+  )
+
+  cliItConcurrent(
+    "reports a clear error for --hint without bug context",
+    ({ opencode }) =>
+      Effect.gen(function* () {
+        const result = yield* opencode.spawn(["run", "--hint"])
+
+        expect(result.exitCode).not.toBe(0)
+        expect(result.stderr).toContain("No bug context available. Describe the bug before asking for a hint.")
+      }),
+    60_000,
+  )
+
   // Happy path: prompt completes, output reaches stdout, process exits 0.
   // If this fails, all the others likely will too — debug here first.
   cliItConcurrent(

@@ -15,6 +15,7 @@ import path from "path"
 import { fileURLToPath } from "url"
 import { useLocal } from "../../context/local"
 import { Flag } from "@opencode-ai/core/flag/flag"
+import { createHintMode, hintText } from "../../hint"
 import { tint, useTheme } from "../../context/theme"
 import { EmptyBorder, SplitBorder } from "../../ui/border"
 import { useTuiPaths, useTuiTerminalEnvironment } from "../../context/runtime"
@@ -102,6 +103,7 @@ const money = new Intl.NumberFormat("en-US", {
 })
 
 const DRAFT_RETENTION_MIN_CHARS = 20
+const sessionHintMode = createHintMode()
 
 function randomIndex(count: number) {
   if (count <= 0) return 0
@@ -260,6 +262,12 @@ export function Prompt(props: PromptProps) {
     if (!messages) return undefined
     return messages.findLast((m): m is UserMessage => m.role === "user")
   })
+  const [hintMode, setHintMode] = createSignal(sessionHintMode.enabled(props.sessionID))
+
+  createEffect(() => {
+    const sessionID = props.sessionID
+    if (sessionID && sessionHintMode.attach(sessionID)) setHintMode(true)
+  })
 
   const usage = createMemo(() => {
     if (!props.sessionID) return
@@ -355,6 +363,22 @@ export function Prompt(props: PromptProps) {
           if (!handled) return
 
           dialog.clear()
+        },
+      },
+      {
+        title: hintMode() ? "Disable hint mode" : "Enable hint mode",
+        name: "session.hint",
+        category: "Session",
+        slashName: "hint",
+        run: () => {
+          const enabled = sessionHintMode.toggle(props.sessionID)
+          setHintMode(enabled)
+          input.clear()
+          setStore("prompt", { input: "", parts: [] })
+          toast.show({
+            variant: "info",
+            message: enabled ? "Hint mode enabled. Future responses will provide hints only." : "Hint mode disabled.",
+          })
         },
       },
       {
@@ -1103,7 +1127,7 @@ export function Prompt(props: PromptProps) {
               ...editorParts,
               {
                 type: "text",
-                text: inputText,
+                text: hintText(inputText, hintMode()),
               },
               ...nonTextParts,
             ],
