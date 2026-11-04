@@ -12,7 +12,7 @@ async function withTempRepo(fn: (dir: string) => Promise<void>): Promise<void> {
   try {
     await fn(dir)
   } finally {
-    await fs.rm(dir, { recursive: true, force: true })
+    await fs.rm(dir, { recursive: true, force: true }).catch(() => {})
   }
 }
 
@@ -276,9 +276,13 @@ describe("Onboard property-based tests (Project 4)", () => {
           }
 
           const runGit = async (args: string[]) => {
-            const proc = Bun.spawn(["git", ...args], { cwd: dir, stdout: "pipe", stderr: "pipe" })
-            await proc.exited
-          }
+          const proc = Bun.spawn(["git", ...args], {
+            cwd: dir,
+            stdout: "ignore",
+            stderr: "ignore",
+          })
+          await proc.exited
+}
 
           await runGit(["init"])
           await runGit(["config", "user.email", "test@example.com"])
