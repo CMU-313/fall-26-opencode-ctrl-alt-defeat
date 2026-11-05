@@ -9,6 +9,7 @@ import { MCP } from "../mcp"
 import { Skill } from "../skill"
 import PROMPT_INITIALIZE from "./template/initialize.txt"
 import PROMPT_REVIEW from "./template/review.txt"
+import { Onboard } from "./onboard"
 import { LegacyEvent } from "@opencode-ai/schema/legacy-event"
 
 type State = {
@@ -25,13 +26,13 @@ export const Info = Schema.Struct({
   agent: Schema.optional(Schema.String),
   model: Schema.optional(Schema.String),
   source: Schema.optional(Schema.Literals(["command", "mcp", "skill"])),
-  // Some command templates are lazy promises from MCP prompt resolution.
+  // Some command templates are lazy promises from MCP prompt resolution or repository analysis.
   template: Schema.Unknown,
   subtask: Schema.optional(Schema.Boolean),
   hints: Schema.Array(Schema.String),
 }).annotate({ identifier: "Command" })
 
-export type Info = Omit<Schema.Schema.Type<typeof Info>, "template"> & { template: Promise<string> | string }
+export type Info = Omit<Schema.Schema.Type<typeof Info>, "template"> & { template: PromiseLike<string> | string }
 
 export function hints(template: string) {
   const result: string[] = []
@@ -46,6 +47,7 @@ export function hints(template: string) {
 export const Default = {
   INIT: "init",
   REVIEW: "review",
+  ONBOARD: "onboard",
 } as const
 
 export interface Interface {
@@ -85,6 +87,17 @@ const layer = Layer.effect(
         },
         subtask: true,
         hints: hints(PROMPT_REVIEW),
+      }
+      commands[Default.ONBOARD] = {
+        name: Default.ONBOARD,
+        description: "explain this codebase to a newcomer and save ONBOARDING.md",
+        source: "command",
+        get template() {
+          // Non-git projects report "/" as their worktree, so fall back to the opened directory.
+          return new Onboard.Template(ctx.worktree === "/" ? ctx.directory : ctx.worktree)
+        },
+        subtask: true,
+        hints: hints(Onboard.PROMPT),
       }
 
       for (const [name, command] of Object.entries(cfg.command ?? {})) {
