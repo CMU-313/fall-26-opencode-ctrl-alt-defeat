@@ -8,6 +8,7 @@ import { EventV2Bridge } from "@/event-v2-bridge"
 import { expect } from "bun:test"
 import { Cause, Deferred, Duration, Effect, Exit, Fiber, Layer } from "effect"
 import path from "path"
+import fs from "node:fs/promises"
 import { fileURLToPath } from "url"
 import { NamedError } from "@opencode-ai/core/util/error"
 import { Agent as AgentSvc } from "../../src/agent/agent"
@@ -443,6 +444,69 @@ const boot = Effect.fn("test.boot")(function* (input?: { title?: string }) {
 })
 
 // Loop semantics
+
+// R5: The code should never be updated after calling the command, by either deterministic
+// functionalities or the AI / LLM. Integration regression: run the real command and LLM adapter,
+// replacing only the remote provider with the local HTTP fixture, including unsolicited tool calls.
+it.instance(
+  "R5: onboard command ignores unsolicited mutation tool calls",
+  () =>
+    Effect.gen(function* () {
+      const { dir, llm } = yield* useServerConfig(providerCfg)
+      const prompt = yield* SessionPrompt.Service
+      const sessions = yield* Session.Service
+      yield* writeText(path.join(dir, "source.ts"), "export const original = true\n")
+      yield* writeText(path.join(dir, "untracked.txt"), "preserve me\n")
+      const snapshot = () =>
+        Effect.promise(async () => {
+          const entries = await fs.readdir(dir, { withFileTypes: true, recursive: true })
+          return Object.fromEntries(
+            await Promise.all(
+              entries
+                .filter(
+                  (entry) =>
+                    entry.isFile() && path.relative(dir, path.join(entry.parentPath, entry.name)) !== "ONBOARDING.md",
+                )
+                .map(async (entry) => {
+                  const file = path.join(entry.parentPath, entry.name)
+                  return [path.relative(dir, file), Buffer.from(await Bun.file(file).arrayBuffer()).toString("base64")]
+                }),
+            ),
+          )
+        })
+      const attempts = [
+        { tool: "write", input: { filePath: path.join(dir, "surprise.ts"), content: "unintended" } },
+        { tool: "edit", input: { filePath: path.join(dir, "source.ts"), oldString: "true", newString: "false" } },
+        { tool: "bash", input: { command: "rm source.ts", description: "Delete source" } },
+      ]
+      for (const attempt of attempts) {
+        const chat = yield* sessions.create({
+          title: "Onboarding isolation",
+          permission: [{ permission: "*", pattern: "*", action: "allow" }],
+        })
+        const before = yield* snapshot()
+        yield* llm.push(reply().text("Repository overview.").tool(attempt.tool, attempt.input))
+        const result = yield* prompt.command({
+          sessionID: chat.id,
+          command: "onboard",
+          arguments: "",
+          agent: "build",
+          model: "test/test-model",
+        })
+        expect(result.info.role).toBe("assistant")
+        expect(result.parts.every((part) => part.type === "text")).toBe(true)
+        expect(yield* snapshot()).toEqual(before)
+        expect(yield* Effect.promise(() => Bun.file(path.join(dir, "ONBOARDING.md")).text())).toContain(
+          "Repository overview.",
+        )
+      }
+      const hits = yield* llm.hits
+      expect(hits).toHaveLength(attempts.length)
+      for (const hit of hits) expect(hit.body.tools ?? []).toEqual([])
+      expect(yield* llm.pending).toBe(0)
+    }),
+  30000,
+)
 
 noLLMServer.instance(
   "loop exits immediately when last assistant has stop finish",

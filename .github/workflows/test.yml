@@ -57,6 +57,13 @@ jobs:
             turbo-${{ runner.os }}-${{ hashFiles('turbo.json', '**/package.json') }}-
             turbo-${{ runner.os }}-
 
+      # Run these explicitly so the property names and outcomes are visible in PR logs;
+      # the package's normal test script uses --only-failures.
+      - name: Run onboarding property tests
+        working-directory: packages/opencode
+        run: bun test --timeout 30000 test/command/onboard.property.test.ts
+        timeout-minutes: 2
+
       - name: Run unit tests
         timeout-minutes: 10
         # Default turbo concurrency (10) oversubscribes ubuntu-latest's 4

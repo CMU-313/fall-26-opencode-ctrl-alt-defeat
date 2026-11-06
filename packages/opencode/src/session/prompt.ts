@@ -25,6 +25,8 @@ import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process"
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
 import * as Stream from "effect/Stream"
 import { Command } from "../command"
+import { Onboard } from "../command/onboard"
+import { EffectBridge } from "@/effect/bridge"
 import { pathToFileURL, fileURLToPath } from "url"
 import { Config } from "@/config/config"
 import { ConfigMarkdown } from "@/config/markdown"
@@ -1368,6 +1370,84 @@ const layer = Layer.effect(
         throw error
       }
       const agentName = cmd.agent ?? input.agent
+
+      if (cmd.template instanceof Onboard.Template) {
+        const ctx = yield* InstanceState.context
+        const model = input.model ? Provider.parseModel(input.model) : yield* currentModel(input.sessionID)
+        const mdl = yield* getModel(model.providerID, model.modelID, input.sessionID)
+        const agent = agentName ? yield* agents.get(agentName) : yield* agents.defaultInfo()
+        if (!agent) throw new Error(`Agent not found: ${agentName}`)
+        const user = yield* prompt({
+          sessionID: input.sessionID,
+          messageID: input.messageID,
+          model,
+          agent: agent.name,
+          noReply: true,
+          parts: [{ type: "text", text: `/onboard ${input.arguments}` }],
+        })
+        if (user.info.role !== "user") throw new Error("Expected onboarding user message")
+        const info = user.info
+        const bridge = yield* EffectBridge.make()
+        const report = yield* Effect.promise(() =>
+          Onboard.generate(
+            ctx.worktree === "/" ? ctx.directory : ctx.worktree,
+            (facts, context) =>
+              bridge.promise(
+                llm
+                  .stream({
+                    agent,
+                    user: info,
+                    system: [],
+                    tools: {},
+                    model: mdl,
+                    sessionID: input.sessionID,
+                    messages: [
+                      {
+                        role: "user",
+                        content: `Explain this repository in up to three short paragraphs using these measured facts and repository documentation. Return explanation text only. User focus: ${input.arguments}\n\n${facts}\n\n${context}`,
+                      },
+                    ],
+                  })
+                  .pipe(
+                    Stream.filter(LLMEvent.is.textDelta),
+                    Stream.map((event) => event.text),
+                    Stream.mkString,
+                    Effect.orDie,
+                  ),
+              ),
+            { verbose: input.arguments.split(/\s+/).includes("--verbose") },
+          ),
+        )
+        const assistant = yield* sessions.updateMessage({
+          id: MessageID.ascending(),
+          role: "assistant",
+          parentID: info.id,
+          sessionID: input.sessionID,
+          mode: agent.name,
+          agent: agent.name,
+          path: { cwd: ctx.directory, root: ctx.worktree },
+          cost: 0,
+          tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+          modelID: mdl.id,
+          providerID: mdl.providerID,
+          time: { created: Date.now(), completed: Date.now() },
+          finish: "stop",
+        })
+        const part = yield* sessions.updatePart({
+          id: PartID.ascending(),
+          messageID: assistant.id,
+          sessionID: input.sessionID,
+          type: "text",
+          text: report,
+        })
+        yield* events.publish(Command.Event.Executed, {
+          name: input.command,
+          sessionID: input.sessionID,
+          arguments: input.arguments,
+          messageID: assistant.id,
+        })
+        return { info: assistant, parts: [part] }
+      }
 
       const raw = input.arguments.match(argsRegex) ?? []
       const args = raw.map((arg) => arg.replace(quoteTrimRegex, ""))
