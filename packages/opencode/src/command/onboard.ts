@@ -126,7 +126,8 @@ const MANIFESTS = new Set([
 
 const CI = /^(\.github\/workflows\/|\.gitlab-ci\.yml$|\.circleci\/|azure-pipelines\.yml$|Jenkinsfile$|\.buildkite\/)/
 
-const DOCS = /^((README|CONTRIBUTING|AGENTS|CLAUDE|ARCHITECTURE|CHANGELOG|SECURITY|TESTING|ONBOARDING)[^/]*|docs?\/.+)$/i
+const DOCS =
+  /^((README|CONTRIBUTING|AGENTS|CLAUDE|ARCHITECTURE|CHANGELOG|SECURITY|TESTING|ONBOARDING)[^/]*|docs?\/.+)$/i
 
 // Monorepo container directories are summarised one level deeper so each package gets its own row.
 const CONTAINERS = new Set(["packages", "apps", "libs", "services", "crates", "modules", "plugins", "tools"])
@@ -188,6 +189,60 @@ export async function analyze(dir: string) {
 
 export type Stats = Awaited<ReturnType<typeof analyze>>
 
+// The model returns text only; report ownership and all filesystem writes stay here.
+export async function generate(
+  dir: string,
+  explain: (facts: string, context: string) => Promise<string>,
+  options: { now?: () => Date; verbose?: boolean } = {},
+) {
+  const timestamp = (options.now ?? (() => new Date()))().toISOString()
+  const stats = await analyze(dir)
+  const facts = render(stats)
+  // Supply bounded repository context without giving the model executable filesystem tools.
+  const context = await Promise.all(
+    [...new Set([...stats.docs, ...stats.manifests])]
+      .filter((file) => file !== "ONBOARDING.md")
+      .slice(0, 10)
+      .map(
+        async (file) =>
+          `### ${file}\n${await Bun.file(path.join(dir, file))
+            .slice(0, 8000)
+            .text()
+            .catch(() => "")}`,
+      ),
+  )
+  const text = await explain(facts, context.join("\n\n"))
+  // Flatten model Markdown into prose so lists, fences, and headings cannot evade the limit.
+  const paragraphs = text
+    .replace(/\r\n?/g, "\n")
+    .split(/\n\s*\n/)
+    .map((block) =>
+      block
+        .split("\n")
+        .map((line) => line.replace(/^\s*(?:#{1,6}\s+|>\s*|[-*+]\s+|\d+[.)]\s+|`{3,}.*|~{3,}.*)/, "").trim())
+        .filter(Boolean)
+        .join(" "),
+    )
+    .filter(Boolean)
+  const report = [
+    "# Repository onboarding",
+    `Generated: ${timestamp}`,
+    "## Overview",
+    ...paragraphs.slice(0, options.verbose ? undefined : 3),
+    "## Repository statistics",
+    facts,
+    "",
+  ].join("\n\n")
+  const destination = path.join(dir, "ONBOARDING.md")
+  const existing = await fs.lstat(destination).catch((error: NodeJS.ErrnoException) => {
+    if (error.code !== "ENOENT") throw error
+  })
+  if (existing && (!existing.isFile() || existing.nlink !== 1))
+    throw new Error("ONBOARDING.md must be a regular, unlinked file")
+  await Bun.write(destination, report)
+  return report
+}
+
 export function render(stats: Stats) {
   const number = (value: number) => value.toLocaleString("en-US")
   const list = (items: string[], limit = 30) =>
@@ -238,7 +293,9 @@ export function render(stats: Stats) {
     "### Declared scripts and task targets",
     stats.scripts.length === 0
       ? "- none found"
-      : stats.scripts.map((item) => `- \`${item.source}\` → \`${item.name}\`${item.command ? `: \`${item.command}\`` : ""}`).join("\n"),
+      : stats.scripts
+          .map((item) => `- \`${item.source}\` → \`${item.name}\`${item.command ? `: \`${item.command}\`` : ""}`)
+          .join("\n"),
     "",
     "### CI configuration",
     list(stats.ci),
@@ -252,7 +309,7 @@ export function render(stats: Stats) {
           `- Commits on HEAD: ${number(stats.git.commits)}`,
           `- Contributors: ${number(stats.git.contributors)}`,
           `- First commit: ${stats.git.first || "unknown"}; latest commit: ${stats.git.last || "unknown"}`,
-          "- Most frequently changed files in the last 90 days:",
+          "- Most frequently changed files in the 90 days preceding the latest commit:",
           stats.git.hot.length === 0
             ? "  - none changed more than once"
             : stats.git.hot.map((item) => `  - \`${item.path}\` (${item.changes} commits)`).join("\n"),
@@ -271,7 +328,11 @@ async function listFiles(dir: string) {
   return {
     git,
     truncated: files.length > MAX_FILES,
-    files: [...new Set(files)].slice(0, MAX_FILES),
+    // The report is an output artifact, not an input to its own repository measurements.
+    files: [...new Set(files)]
+      .filter((file) => file !== "ONBOARDING.md")
+      .toSorted()
+      .slice(0, MAX_FILES),
   }
 }
 
@@ -384,8 +445,11 @@ async function scripts(dir: string) {
       const text = await Bun.file(path.join(dir, source))
         .text()
         .catch(() => "")
-      return [...text.matchAll(/^([A-Za-z0-9][A-Za-z0-9_.-]*)\s*(?:[^:=\n]*)?:(?!=)/gm)]
-        .map((match) => ({ source, name: match[1], command: "" }))
+      return [...text.matchAll(/^([A-Za-z0-9][A-Za-z0-9_.-]*)\s*(?:[^:=\n]*)?:(?!=)/gm)].map((match) => ({
+        source,
+        name: match[1],
+        command: "",
+      }))
     }),
   )
   return [...npm, ...targets.flat()].slice(0, 40)
@@ -396,12 +460,15 @@ async function history(dir: string, files: Set<string>) {
     Process.text(["git", "-c", "core.quotepath=false", ...args], { cwd: dir, nothrow: true }).then((result) =>
       result.code === 0 ? result.text.trim() : "",
     )
+  // Anchor activity to HEAD rather than wall-clock time, so unchanged repositories stay deterministic.
+  const latest = await git(["log", "-1", "--format=%ct", "HEAD"])
+  const since = new Date((Number(latest) - 90 * 86400) * 1000).toISOString()
   const [commits, contributors, roots, last, recent] = await Promise.all([
     git(["rev-list", "--count", "HEAD"]),
     git(["shortlog", "-sn", "--no-merges", "HEAD"]),
     git(["log", "--max-parents=0", "--format=%cs", "HEAD"]),
     git(["log", "-1", "--format=%cs", "HEAD"]),
-    git(["log", "--since=90.days.ago", "--no-merges", "--name-only", "--format=", "HEAD"]),
+    git(["log", `--since=${since}`, "--no-merges", "--name-only", "--format=", "HEAD"]),
   ])
   const changes = Map.groupBy(
     recent.split("\n").filter((file) => files.has(file)),
