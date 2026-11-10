@@ -1,0 +1,33 @@
+{
+  "$schema": "https://raw.githubusercontent.com/stryker-mutator/stryker-js/master/packages/api/schema/stryker-core.json",
+  "testRunner": "command",
+  "commandRunner": {
+    "command": "bun test test/command/onboard.property.test.ts"
+  },
+  "mutate": [
+    "src/command/onboard.ts:156-200",
+    "src/command/onboard.ts:264-288",
+    "src/command/onboard.ts:311-371",
+    "src/command/onboard.ts:394-422"
+  ],
+  "ignorePatterns": [
+    "tsconfig.json",
+    "**/tsconfig*.json",
+    "bunfig.toml"
+  ],
+  "reporters": [
+    "html",
+    "clear-text",
+    "progress",
+    "json"
+  ],
+  "htmlReporter": {
+    "fileName": "reports/mutation/mutation.html"
+  },
+  "jsonReporter": {
+    "fileName": "reports/mutation/mutation.json"
+  },
+  "timeoutMS": 60000,
+  "concurrency": 2,
+  "coverageAnalysis": "off"
+}

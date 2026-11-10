@@ -5,6 +5,8 @@ import os from "os"
 import path from "path"
 import { Onboard } from "../../src/command/onboard"
 
+fc.configureGlobal({ seed: 42 })
+
 // Helper to materialize a temporary repository directory for a single property run
 // and always clean it up afterwards.
 async function withTempRepo(fn: (dir: string) => Promise<void>): Promise<void> {

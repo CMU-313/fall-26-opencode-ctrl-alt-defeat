@@ -32,3 +32,16 @@ Properties written or suggested by opencode or another AI tool: R1, R2, R3, R4, 
 | H3 | R3 | `onboard.ts`: In `history()`, changes hot files threshold from `item.changes > 1` to `item.changes >= 1`. | "R3: git history section accurately reflects repository commit metadata..." | Killed: `stats.git.hot` incorrectly included once-touched file `src/once.ts`. |
 | H4 | R4 | `onboard.ts`: In `analyze()`, changes `.slice(0, TOP)` on `largest` to `.slice(0, 15)`. | "R4: onboarding output enforces size bounds on largest files..." | Killed: Returned 11–15 largest files, failing `expect(stats.largest.length).toBeLessThanOrEqual(10)`. |
 | H5 | R5 | `onboard.ts`: Removes ignored directories from `WALK_IGNORED`, leaving only `new Set([".git"])`. | "R5 (Metamorphic): adding a source file vs ignored file changes stats predictably" | Killed: Files in `node_modules/` were included in counts, failing `expect(afterIgnored.sourceFiles).toBe(before.sourceFiles)`. |
+## Stryker comparison
+
+- **Fast-check seed:** `42` (`fc.configureGlobal({ seed: 42 })`)
+- **Initial mutation score:** **61.73%** (171 / 277 detected: 169 killed, 2 timed out, 106 survived)
+
+**Which of your hand-written mutants did Stryker never generate? Why not?**
+Stryker never generated **H1** (writing a `.onboard_cache` file to disk during `analyze`) or the exact constant change in **H4** (`.slice(0, 15)`). Because Stryker only applies syntactic edits like flipping operators, negating conditions, or stripping method calls on existing code, it cannot invent new side-effecting calls that don't already exist in the source file.
+
+**Which Stryker survivors would you never have thought of? Are any of them bugs a real developer might plausibly write?**
+I would never have thought to replace the empty fallback array in `render()` with `["Stryker was here"]` (ID 61) or strip `.filter(item => item !== undefined)` in `measureSources()` (ID 117), which survived only because our generators didn't produce unreadable files or check for extra lines on short lists. However, several survivors are bugs a real developer could plausibly write, such as an off-by-one depth check `< 3` instead of `<= 3` on manifests (ID 29), or using `parts.length >= 2` instead of `> 2` when grouping monorepo container directories (ID 176).
+
+**What does each approach find that the other doesn't?**
+Hand written mutants catch big picture bugs tied directly to user requirements, like making sure the command never creates new files on disk, which an automated tool would never think to write. On the other hand, Stryker checks every single line, if statement, and output field in the code. It catches places where our tests forgot to check part of the output or where our test generators missed edge cases.
