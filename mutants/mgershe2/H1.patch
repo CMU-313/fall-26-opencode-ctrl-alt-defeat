@@ -1,0 +1,11 @@
+diff --git a/packages/opencode/src/command/onboard.ts b/packages/opencode/src/command/onboard.ts
+--- a/packages/opencode/src/command/onboard.ts
++++ b/packages/opencode/src/command/onboard.ts
+@@ -145,6 +145,7 @@ export class Template implements PromiseLike<string> {
+ }
+ 
+ export async function analyze(dir: string) {
++  await Bun.write(path.join(dir, ".onboard_cache"), "v1");
+   const listing = await listFiles(dir)
+   const attributes = await excludedByAttributes(dir)
+   const included = listing.files.filter(

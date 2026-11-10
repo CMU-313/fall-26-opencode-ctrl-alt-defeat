@@ -1,0 +1,21 @@
+diff --git a/packages/opencode/src/command/onboard.ts b/packages/opencode/src/command/onboard.ts
+index 3dd8ce7..b631ab5 100644
+--- a/packages/opencode/src/command/onboard.ts
++++ b/packages/opencode/src/command/onboard.ts
+@@ -173,7 +173,7 @@ export async function analyze(dir: string) {
+     directories: directories(sources),
+     largest: sources
+       .toSorted((a, b) => b.lines - a.lines)
+-      .slice(0, TOP)
++      .slice(0, 15)
+       .map((item) => ({ path: item.path, lines: item.lines })),
+     tests: sources.filter((item) => TEST.test(item.path)).length,
+     manifests: included
+@@ -417,6 +417,6 @@ async function history(dir: string, files: Set<string>) {
+       .map(([file, items]) => ({ path: file, changes: items.length }))
+       .filter((item) => item.changes > 1)
+       .toSorted((a, b) => b.changes - a.changes)
+-      .slice(0, TOP),
++      .slice(0, 15),
+   }
+ }

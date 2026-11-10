@@ -1,0 +1,13 @@
+diff --git a/packages/opencode/src/command/onboard.ts b/packages/opencode/src/command/onboard.ts
+index 3dd8ce7..acb4e1b 100644
+--- a/packages/opencode/src/command/onboard.ts
++++ b/packages/opencode/src/command/onboard.ts
+@@ -94,7 +94,7 @@ const EXCLUDED = [
+   /\.map$/,
+ ]
+ 
+-const WALK_IGNORED = new Set([".git", "node_modules", "vendor", "dist", "build", "out", "target", ".venv", "venv"])
++const WALK_IGNORED = new Set([".git"])
+ 
+ const TEST = /(^|\/)(test|tests|__tests__|spec|e2e)\/|\.(test|spec)\.[a-z]+$|_test\.(go|py)$|(^|\/)test_[^/]+\.py$/
+ 
