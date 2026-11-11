@@ -1,0 +1,22 @@
+diff --git a/packages/opencode/src/command/onboard.ts b/packages/opencode/src/command/onboard.ts
+index 3dd8ce7..94496ee 100644
+--- a/packages/opencode/src/command/onboard.ts
++++ b/packages/opencode/src/command/onboard.ts
+@@ -172,7 +172,7 @@ export async function analyze(dir: string) {
+     languages: languages(sources, lines),
+     directories: directories(sources),
+     largest: sources
+-      .toSorted((a, b) => b.lines - a.lines)
++      .toSorted((a, b) => a.lines - b.lines)
+       .slice(0, TOP)
+       .map((item) => ({ path: item.path, lines: item.lines })),
+     tests: sources.filter((item) => TEST.test(item.path)).length,
+@@ -345,7 +345,7 @@ function languages(sources: { language: string; lines: number }[], total: number
+         percent: total === 0 ? 0 : Math.round((lines / total) * 1000) / 10,
+       }
+     })
+-    .toSorted((a, b) => b.lines - a.lines)
++    .toSorted((a, b) => a.lines - b.lines)
+ }
+ 
+ function directories(sources: { path: string; lines: number }[]) {

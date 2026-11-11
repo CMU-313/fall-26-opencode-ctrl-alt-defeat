@@ -1,0 +1,12 @@
+diff --git a/packages/opencode/src/command/onboard.ts b/packages/opencode/src/command/onboard.ts
+--- a/packages/opencode/src/command/onboard.ts
++++ b/packages/opencode/src/command/onboard.ts
+@@ -334,7 +334,7 @@ async function history(dir: string, files: Set<string>) {
+     // A file touched once is not a signal, and squashed imports would otherwise list arbitrary files.
+     hot: [...changes.entries()]
+       .map(([file, items]) => ({ path: file, changes: items.length }))
+-      .filter((item) => item.changes > 1)
++      .filter((item) => item.changes >= 1)
+       .toSorted((a, b) => b.changes - a.changes)
+       .slice(0, TOP),
+   }

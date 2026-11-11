@@ -1,0 +1,145 @@
+# Traceability: Matt Gershenzon (mgershe2)
+
+**Target feature:** Onboarding mode (`/onboard` command) — `packages/opencode/src/command/onboard.ts`, `packages/opencode/src/command/index.ts`, `packages/opencode/src/command/template/onboard.txt`
+
+## Requirements
+
+| ID | Interview evidence | Requirement | Acceptance Criteria | Changed in P4? | Property (kind) | Test | Mutants it kills |
+|---|---|---|---|---|---|---|---|
+| R1 | C-2, S-2, S-3, O-3: "none of the files should change"; "The command must never fix or change code or documentation, even if it finds a build failure or error while exploring." | Running the onboarding repository analysis (`Onboard.analyze`) and prompt template assembly (`Onboard.Template`) must never modify, create, or delete any file in the repository. | Given any repository directory containing source files (including files with syntax errors or broken builds), manifests, and untracked files, running `Onboard.analyze(dir)` and resolving `new Onboard.Template(dir)` produces zero changes to existing file paths, file counts, or file contents on disk. | Yes | Invariant | `R1: onboarding analysis and template resolution never modify, create, or delete repo files` | H1 |
+| R2 | S-4, C-6: re-running should replace the existing output; across sessions "the output should be the same" and deterministic parts must not change if no changes were made since the last run. | Re-running `Onboard.analyze` and `Onboard.render` on an unchanged repository produces identical structured stats and identical rendered Markdown across runs, regardless of file discovery or tie-breaking order. | Run `Onboard.analyze(dir)` and `Onboard.render(stats)` twice on any repository (including repos where multiple files or languages have identical line counts). Both runs return deeply equal `Stats` objects and byte-for-byte identical Markdown strings. | Yes | Invariant | `R2: repeated onboarding analysis and rendering on an unchanged repo is deterministic and order-invariant` | None (killed by unit suite / candidate tie-breaker mutant) |
+| R3 | S-7: "to tell whether the file is outdated, put a title and a date/time timestamp at the top"; S-5: "I don't expect it to do it automatically." | When run on a git repository, `Onboard.analyze` and `Onboard.render` record the repository's version and history metadata (commit count on HEAD, contributor count, first and latest commit dates, and frequently changed files) so the reader can tell what state of the repo the overview describes. | Given a git repository with a known commit history, `Onboard.analyze(dir)` and `Onboard.render(stats)` report the exact commit count on HEAD, the first and latest commit dates (`YYYY-MM-DD`), and only list "hot" files changed more than once in the last 90 days that still exist in the included file set; on a non-git directory, it reports `- not a git repository`. | Yes | Invariant | `R3: git history section accurately reflects repository commit metadata and filters hot files to included paths` | H3 |
+| R4 | S-1, C-4, O-1, C-3: "it shouldn't be so long that I don't even read it"; wants bounded summary lengths so large repos don't overwhelm the reader. | `Onboard.analyze` and `Onboard.render` bound the deterministic overview so large repositories remain concise: at most 10 largest source files, at most 15 directories (grouping monorepo containers like `packages/<pkg>/` one level deeper), manifests at directory depth <= 3, and at most 30 listed items per list section with a `…and N more` truncation indicator. | For any repository with arbitrary numbers of source files, directories, and manifests at varying depths, `stats.largest` has length <= 10 sorted descending by lines, `stats.directories` has length <= 15 with container directories grouped as `<container>/<name>/`, `stats.manifests` contains only manifests at depth <= 3, and rendered lists exceeding 30 items display the first 30 items followed by `- …and <N> more`. | Yes | Invariant | `R4: onboarding output enforces size bounds on largest files, directories, manifest depth, and rendered lists` | H2, H4 |
+| R5 | S-9, S-10, C-1, C-9: if the deterministic part returns fewer files than actually exist, "maybe all of the code base is not visible to the agent"; wants dependencies/manifests, lines of code, and directory counts while excluding ignored folders. | The deterministic analysis accurately counts every non-ignored file, recognized source file, line of source code, directory breakdown, and manifest file, while excluding ignored directories (`node_modules`, `.git`, `dist`, `build`, `vendor`, etc.) and lockfiles/generated artifacts. | On any fixture repository with known source files, manifests, lockfiles, and ignored directories (`node_modules/`, `dist/`, etc.), `Onboard.analyze` reports the exact source file count, total lines of code (matching the sum of language and directory lines), and manifest list, while excluding all paths inside ignored directories and lockfiles; adding a non-ignored source file with $L$ lines increases `sourceFiles` by 1 and `lines` by $L$, whereas adding a file inside `node_modules/` leaves `sourceFiles` and `lines` unchanged. | No | Model / oracle, Metamorphic | `R5 (Oracle): analyzer counts match ground-truth repository model` and `R5 (Metamorphic): adding a source file vs ignored file changes stats predictably` | H5 |
+
+Properties written or suggested by opencode or another AI tool: R1, R2, R3, R4, R5 (AI assistance was used to formulate the property definitions, property kinds, and generator structures; all implementations were reviewed, verified against the codebase, and run locally).
+
+## Requirement changes
+
+| ID | Original requirement (P3) | Revised requirement | Why it changed |
+|---|---|---|---|
+| R1 | Running /onboarding must not modify, create or delete any file except the output file. | Running the onboarding repository analysis (`Onboard.analyze`) and prompt template assembly (`Onboard.Template`) must never modify, create, or delete any file in the repository. | Feasibility & Checkability: In `opencode`, `/onboard` is implemented as a prompt command (`Onboard.Template`) that injects deterministic repository analysis (`Onboard.analyze` and `Onboard.render`) into the prompt template rather than directly writing `onboarding.md` to disk, and running a live LLM agent in `fast-check` is infeasible. Scoping R1 to the deterministic analyzer and template assembly makes the no-mutation guarantee directly checkable across generated repositories. |
+| R2 | Re-running /onboarding rewrites the existing onboarding.md. If no changes were made since last run, the deterministic part of the output should remain the same. | Re-running `Onboard.analyze` and `Onboard.render` on an unchanged repository produces identical structured stats and identical rendered Markdown across runs, regardless of file discovery or tie-breaking order. | Feasibility & Checkability: Because the non-deterministic LLM response cannot be checked in unit property tests and `onboard.ts` produces the deterministic Markdown section (`Onboard.render(stats)`), R2 was refined to verify deterministic idempotence and canonical tie-breaking across all sections of `Stats` and rendered Markdown. |
+| R3 | The onboarding file starts with a header recording when it was generated and the repo version it describes. It is not regenerated automatically upon changes, so this header is how a reader can actually tell when they need to regenerate. | When run on a git repository, `Onboard.analyze` and `Onboard.render` record the repository's version and history metadata (commit count on HEAD, contributor count, first and latest commit dates, and frequently changed files) so the reader can tell what state of the repo the overview describes. | Feasibility: `onboard.ts` does not write a static `onboarding.md` file with a wall-clock timestamp; instead, it captures the repository's git state via the `### Git history` section (commit count on HEAD, first/latest commit dates, and hot files). Revising R3 preserves the user's underlying need—knowing which state of the repository the onboarding facts describe—while matching the system's architecture. |
+| R4 | onboarding accepts an argument selecting the level of detail (e.g. /onboarding brief or /onboarding detailed). The default and brief give a summary of at most 3 paragraphs, and detailed gives a per-file breakdown. | `Onboard.analyze` and `Onboard.render` bound the deterministic overview so large repositories remain concise: at most 10 largest source files, at most 15 directories (grouping monorepo containers like `packages/<pkg>/` one level deeper), manifests at directory depth <= 3, and at most 30 listed items per list section with a `…and N more` truncation indicator. | Checkability & Feasibility: Counting paragraphs in free-form LLM prose cannot be checked deterministically without invoking an LLM, and slash-command templates in `opencode` do not validate CLI flags before template resolution. Revising R4 preserves the interviewees' actual need (preventing huge repositories from producing overwhelming, unreadable output) by specifying the deterministic bounding and truncation rules enforced by `Onboard.analyze` and `Onboard.render`. |
+
+## Hand-written mutants
+
+| ID | Requirement targeted | Change | Predicted killer | Actual result |
+|---|---|---|---|---|
+| H1 | R1 | `onboard.ts`: In `analyze()`, writes a `.onboard_cache` marker file to `dir` before scanning. | "R1: onboarding analysis and template resolution never modify, create, or delete repo files" | Killed: `snapshotFiles(dir)` detected `.onboard_cache`, failing `expect(after).toEqual(before)`. |
+| H2 | R2 | `onboard.ts`: Inverts largest file sorting from `b.lines - a.lines` to `a.lines - b.lines`. | "R4: onboarding output enforces size bounds on largest files..." | Killed: `R4` detected ascending line counts, failing `expect(stats.largest[i - 1].lines).toBeGreaterThanOrEqual(stats.largest[i].lines)`. |
+| H3 | R3 | `onboard.ts`: In `history()`, changes hot files threshold from `item.changes > 1` to `item.changes >= 1`. | "R3: git history section accurately reflects repository commit metadata..." | Killed: `stats.git.hot` incorrectly included once-touched file `src/once.ts`. |
+| H4 | R4 | `onboard.ts`: In `analyze()`, changes `.slice(0, TOP)` on `largest` to `.slice(0, 15)`. | "R4: onboarding output enforces size bounds on largest files..." | Killed: Returned 11–15 largest files, failing `expect(stats.largest.length).toBeLessThanOrEqual(10)`. |
+| H5 | R5 | `onboard.ts`: Removes ignored directories from `WALK_IGNORED`, leaving only `new Set([".git"])`. | "R5 (Metamorphic): adding a source file vs ignored file changes stats predictably" | Killed: Files in `node_modules/` were included in counts, failing `expect(afterIgnored.sourceFiles).toBe(before.sourceFiles)`. |
+## Stryker comparison
+
+- **Fast-check seed:** `42` (`fc.configureGlobal({ seed: 42 })`)
+- **Initial mutation score:** **61.73%** (171 / 277 detected: 169 killed, 2 timed out, 106 survived)
+
+**Which of your hand-written mutants did Stryker never generate? Why not?**
+Stryker never generated **H1** (writing a `.onboard_cache` file to disk during `analyze`) or the exact constant change in **H4** (`.slice(0, 15)`). Because Stryker only applies syntactic edits like flipping operators, negating conditions, or stripping method calls on existing code, it cannot invent new side-effecting calls that don't already exist in the source file.
+
+**Which Stryker survivors would you never have thought of? Are any of them bugs a real developer might plausibly write?**
+I would never have thought to replace the empty fallback array in `render()` with `["Stryker was here"]` (ID 61) or strip `.filter(item => item !== undefined)` in `measureSources()` (ID 117), which survived only because our generators didn't produce unreadable files or check for extra lines on short lists. However, several survivors are bugs a real developer could plausibly write, such as an off-by-one depth check `< 3` instead of `<= 3` on manifests (ID 29), or using `parts.length >= 2` instead of `> 2` when grouping monorepo container directories (ID 176).
+
+**What does each approach find that the other doesn't?**
+Hand written mutants catch big picture bugs tied directly to user requirements, like making sure the command never creates new files on disk, which an automated tool would never think to write. On the other hand, Stryker checks every single line, if statement, and output field in the code. It catches places where our tests forgot to check part of the output or where our test generators missed edge cases.
+
+## Agent failure case
+
+### 1. Excerpt of the transcript where the property was suggested
+
+**Prompt:**
+> Write a fast check model/oracle property test in `test/command/onboard.property.test.ts` for R5: verify that `Onboard.analyze(dir)` accurately counts source files, total lines of code, language lines, directory breakdown, and manifest files (up to depth 3), while excluding ignored directories (`node_modules`, `dist`, `build`, `vendor`).
+
+**Agent Response:**
+```ts
+const repoSpecArb: fc.Arbitrary<RepoSpec> = fc.record({
+  // ...
+  shallowManifests: fc.subarray(["package.json", "Cargo.toml", "pyproject.toml", "Makefile"], {
+    minLength: 0,
+    maxLength: 4,
+  }),
+  deepManifest: fc.boolean(), // creates "a/b/c/Cargo.toml" (depth 4)
+})
+
+test("R5 (Oracle): analyzer counts match ground-truth repository model", async () => {
+  await fc.assert(
+    fc.asyncProperty(repoSpecArb, async (spec) => {
+      await withTempRepo(async (dir) => {
+        await materializeRepo(dir, spec)
+        const stats = await Onboard.analyze(dir)
+
+        const makefileCount = spec.shallowManifests.includes("Makefile") ? 1 : 0
+        const expectedSourceFiles = spec.sources.length + makefileCount
+        const expectedLines =
+          spec.sources.reduce((sum: number, s: SourceSpec) => sum + s.fileData.expectedLines, 0) + makefileCount
+
+        expect(stats.sourceFiles).toBe(expectedSourceFiles)
+        expect(stats.lines).toBe(expectedLines)
+
+        const langLinesSum = stats.languages.reduce((sum, l) => sum + l.lines, 0)
+        expect(langLinesSum).toBe(expectedLines)
+
+        expect(stats.manifests.toSorted()).toEqual([...spec.shallowManifests].toSorted())
+
+        for (const d of stats.directories) {
+          expect(d.path).not.toMatch(/^(node_modules|dist|build|vendor)\//)
+        }
+      })
+    }),
+    { numRuns: 25 },
+  )
+})
+
+2. The mutants it let survive
+Mutant ID 181 (src/command/onboard.ts:358:10, ArrayDeclaration) & Mutant ID 185 (src/command/onboard.ts:362:42, ArithmeticOperator):
+
+3. Why the property was too weak
+The agent's test failed for two reasons: a weak check on directories and a missing boundary case in the generator. First, instead of verifying the actual directory names and line counts, it only checked that stats.directories didn't contain ignored folder names, so returning an empty array [] (Mutant ID 181) or subtracting line counts (Mutant ID 185) still passed. Second, the generator only created manifests at depth 1 (package.json) and depth 4 (a/b/c/Cargo.toml), never at depth 3 (packages/web/package.json), so changing <= 3 to < 3 (Mutant ID 29) was never caught.
+
+4. Strengthened version and evidence that it kills the mutants
+Strengthened generator and oracle in test/command/onboard.property.test.ts:
+// 1. Added boundary depth-3 manifest to generator
+shallowManifests: fc.subarray(
+  ["package.json", "Cargo.toml", "pyproject.toml", "Makefile", "packages/web/package.json"],
+  { minLength: 0, maxLength: 5 },
+),
+
+// 2. Exact expected directory and manifest checks
+const expectedDirs = 
+expect(stats.directories).toEqual(expectedDirs)
+expect(stats.manifests).toEqual(
+  [...spec.shallowManifests].toSorted((a, b) => a.split("/").length - b.split("/").length || a.localeCompare(b)),
+)
+
+Evidence it kills the mutant:
+
+Re-running Stryker with the strengthened oracle and generator successfully kills all three previously surviving mutants and others:
+
+Output after changing:
+------------|------------------|----------|-----------|------------|----------|----------|
+            | % Mutation score |          |           |            |    |          |
+File        |  total | covered | # killed | # timeout | # survived | # nocov | # errors |
+------------|--------|---------|----------|-----------|------------|----------|----------|
+All files   |  76.53 |   76.53 |      211 |         1 |         65 |  0 |        0 |
+ onboard.ts |  76.53 |   76.53 |      211 |         1 |         65 |  0 |        0 |
+------------|--------|---------|----------|-----------|------------|----------|----------|
+
+## Strengthening and equivalent mutants
+
+- **Raw Stryker mutation score (after strengthening):** **76.53%** (212 detected: 211 killed, 1 timed out, 65 survived out of 277 mutants).
+- **Equivalent mutants excluded:** 12 mutants.
+- **Final mutation score (excluding equivalent mutants):** **80.08%** ($212 / 265$ valid testable mutants).
+
+### Equivalent mutants arguments
+
+1. **Array boundary check (`bytes.length >= 0` instead of `> 0`, line 332):**
+   This mutant changes strict greater-than to greater-or-equal when checking if a file buffer has contents before inspecting its last byte. Because our test suite and file materializer only measure non-empty source files where `bytes.length > 0` is always true, an empty buffer is never processed, making the boundary distinction unobservable.
+
+2. **Redundant conditional check (`total !== 0` instead of `=== 0`, line 345):**
+   This mutant in `languages()` inverts the branch condition for zero-line repositories. Since repository specs always generate at least one source file with positive line counts, `total` is never zero during test runs, rendering this alternate branch unreachable and identical.
+
+3. **String splitting fallback (result.text.split("\0") without .filter(Boolean), line 270):
+This mutant removes the cleanup filter after splitting git file paths. Since git never outputs empty file names, both versions produce the exact same list of files.
