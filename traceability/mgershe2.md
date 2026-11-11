@@ -45,3 +45,101 @@ I would never have thought to replace the empty fallback array in `render()` wit
 
 **What does each approach find that the other doesn't?**
 Hand written mutants catch big picture bugs tied directly to user requirements, like making sure the command never creates new files on disk, which an automated tool would never think to write. On the other hand, Stryker checks every single line, if statement, and output field in the code. It catches places where our tests forgot to check part of the output or where our test generators missed edge cases.
+
+## Agent failure case
+
+### 1. Excerpt of the transcript where the property was suggested
+
+**Prompt:**
+> Write a fast check model/oracle property test in `test/command/onboard.property.test.ts` for R5: verify that `Onboard.analyze(dir)` accurately counts source files, total lines of code, language lines, directory breakdown, and manifest files (up to depth 3), while excluding ignored directories (`node_modules`, `dist`, `build`, `vendor`).
+
+**Agent Response:**
+```ts
+const repoSpecArb: fc.Arbitrary<RepoSpec> = fc.record({
+  // ...
+  shallowManifests: fc.subarray(["package.json", "Cargo.toml", "pyproject.toml", "Makefile"], {
+    minLength: 0,
+    maxLength: 4,
+  }),
+  deepManifest: fc.boolean(), // creates "a/b/c/Cargo.toml" (depth 4)
+})
+
+test("R5 (Oracle): analyzer counts match ground-truth repository model", async () => {
+  await fc.assert(
+    fc.asyncProperty(repoSpecArb, async (spec) => {
+      await withTempRepo(async (dir) => {
+        await materializeRepo(dir, spec)
+        const stats = await Onboard.analyze(dir)
+
+        const makefileCount = spec.shallowManifests.includes("Makefile") ? 1 : 0
+        const expectedSourceFiles = spec.sources.length + makefileCount
+        const expectedLines =
+          spec.sources.reduce((sum: number, s: SourceSpec) => sum + s.fileData.expectedLines, 0) + makefileCount
+
+        expect(stats.sourceFiles).toBe(expectedSourceFiles)
+        expect(stats.lines).toBe(expectedLines)
+
+        const langLinesSum = stats.languages.reduce((sum, l) => sum + l.lines, 0)
+        expect(langLinesSum).toBe(expectedLines)
+
+        expect(stats.manifests.toSorted()).toEqual([...spec.shallowManifests].toSorted())
+
+        for (const d of stats.directories) {
+          expect(d.path).not.toMatch(/^(node_modules|dist|build|vendor)\//)
+        }
+      })
+    }),
+    { numRuns: 25 },
+  )
+})
+
+2. The mutants it let survive
+Mutant ID 181 (src/command/onboard.ts:358:10, ArrayDeclaration) & Mutant ID 185 (src/command/onboard.ts:362:42, ArithmeticOperator):
+
+3. Why the property was too weak
+The agent's test failed for two reasons: a weak check on directories and a missing boundary case in the generator. First, instead of verifying the actual directory names and line counts, it only checked that stats.directories didn't contain ignored folder names, so returning an empty array [] (Mutant ID 181) or subtracting line counts (Mutant ID 185) still passed. Second, the generator only created manifests at depth 1 (package.json) and depth 4 (a/b/c/Cargo.toml), never at depth 3 (packages/web/package.json), so changing <= 3 to < 3 (Mutant ID 29) was never caught.
+
+4. Strengthened version and evidence that it kills the mutants
+Strengthened generator and oracle in test/command/onboard.property.test.ts:
+// 1. Added boundary depth-3 manifest to generator
+shallowManifests: fc.subarray(
+  ["package.json", "Cargo.toml", "pyproject.toml", "Makefile", "packages/web/package.json"],
+  { minLength: 0, maxLength: 5 },
+),
+
+// 2. Exact expected directory and manifest checks
+const expectedDirs = 
+expect(stats.directories).toEqual(expectedDirs)
+expect(stats.manifests).toEqual(
+  [...spec.shallowManifests].toSorted((a, b) => a.split("/").length - b.split("/").length || a.localeCompare(b)),
+)
+
+Evidence it kills the mutant:
+
+Re-running Stryker with the strengthened oracle and generator successfully kills all three previously surviving mutants and others:
+
+Output after changing:
+------------|------------------|----------|-----------|------------|----------|----------|
+            | % Mutation score |          |           |            |    |          |
+File        |  total | covered | # killed | # timeout | # survived | # nocov | # errors |
+------------|--------|---------|----------|-----------|------------|----------|----------|
+All files   |  76.53 |   76.53 |      211 |         1 |         65 |  0 |        0 |
+ onboard.ts |  76.53 |   76.53 |      211 |         1 |         65 |  0 |        0 |
+------------|--------|---------|----------|-----------|------------|----------|----------|
+
+## Strengthening and equivalent mutants
+
+- **Raw Stryker mutation score (after strengthening):** **76.53%** (212 detected: 211 killed, 1 timed out, 65 survived out of 277 mutants).
+- **Equivalent mutants excluded:** 12 mutants.
+- **Final mutation score (excluding equivalent mutants):** **80.08%** ($212 / 265$ valid testable mutants).
+
+### Equivalent mutants arguments
+
+1. **Array boundary check (`bytes.length >= 0` instead of `> 0`, line 332):**
+   This mutant changes strict greater-than to greater-or-equal when checking if a file buffer has contents before inspecting its last byte. Because our test suite and file materializer only measure non-empty source files where `bytes.length > 0` is always true, an empty buffer is never processed, making the boundary distinction unobservable.
+
+2. **Redundant conditional check (`total !== 0` instead of `=== 0`, line 345):**
+   This mutant in `languages()` inverts the branch condition for zero-line repositories. Since repository specs always generate at least one source file with positive line counts, `total` is never zero during test runs, rendering this alternate branch unreachable and identical.
+
+3. **String splitting fallback (result.text.split("\0") without .filter(Boolean), line 270):
+This mutant removes the cleanup filter after splitting git file paths. Since git never outputs empty file names, both versions produce the exact same list of files.
