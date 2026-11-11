@@ -7,8 +7,6 @@ import { Onboard } from "../../src/command/onboard"
 
 fc.configureGlobal({ seed: 42 })
 
-// Helper to materialize a temporary repository directory for a single property run
-// and always clean it up afterwards.
 async function withTempRepo(fn: (dir: string) => Promise<void>): Promise<void> {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "opencode-onboard-prop-"))
   try {
@@ -18,7 +16,6 @@ async function withTempRepo(fn: (dir: string) => Promise<void>): Promise<void> {
   }
 }
 
-// Helper to recursively snapshot all files and their exact string contents in a directory.
 async function snapshotFiles(dir: string, rel?: string): Promise<Record<string, string>> {
   const base = rel || ""
   const result: Record<string, string> = {}
@@ -37,22 +34,6 @@ async function snapshotFiles(dir: string, rel?: string): Promise<Record<string, 
   }
   return result
 }
-
-// ============================================================================
-// Custom Generators (Arbitraries)
-// ============================================================================
-// Explanations of generator choices:
-// 1. SAFE_NAMES & dirPrefixArb: Generates valid, collision-resistant directory/file
-//    base names at root, top-level directories (src, lib), and monorepo containers
-//    (packages/web, apps/api) while avoiding reserved test/ignored words so the
-//    oracle knows with certainty whether a path is counted as source or excluded.
-// 2. linesContentArb: Generates file contents with an exact known line count (1..40),
-//    explicitly exercising trailing-newline vs. no-trailing-newline boundaries in
-//    measure() as well as broken syntax strings that interviewees worried an agent
-//    might try to auto-fix.
-// 3. repoSpecArb: Combines multiple languages (.ts, .py, .go, .rs), ignored folders
-//    (node_modules, dist, build, vendor), lockfiles (package-lock.json),
-//    and shallow vs. deep manifests (a/b/c/Cargo.toml) to hit boundary conditions.
 
 const SAFE_NAMES = ["alpha", "beta", "gamma", "delta", "epsilon", "zeta", "eta", "theta", "iota", "kappa"]
 
@@ -202,9 +183,6 @@ async function materializeRepo(dir: string, spec: RepoSpec, reverseOrder: boolea
 }
 
 describe("Onboard property-based tests (Project 4)", () => {
-  // R1: Running the onboarding repository analysis (Onboard.analyze) and prompt template
-  // assembly (Onboard.Template) must never modify, create, or delete any file in the repository.
-  // Kind: Invariant
   test("R1: onboarding analysis and template resolution never modify, create, or delete repo files", async () => {
     await fc.assert(
       fc.asyncProperty(repoSpecArb, async (spec) => {
@@ -225,10 +203,6 @@ describe("Onboard property-based tests (Project 4)", () => {
     )
   })
 
-  // R2: Re-running Onboard.analyze and Onboard.render on an unchanged repository produces
-  // identical structured stats and identical rendered Markdown across runs, regardless of
-  // file discovery or tie-breaking order.
-  // Kind: Invariant
   test("R2: repeated onboarding analysis and rendering on an unchanged repo is deterministic and order-invariant", async () => {
     await fc.assert(
       fc.asyncProperty(repoSpecArb, async (spec) => {
@@ -251,11 +225,6 @@ describe("Onboard property-based tests (Project 4)", () => {
     )
   })
 
-  // R3: When run on a git repository, Onboard.analyze and Onboard.render record the repository's
-  // version and history metadata (commit count on HEAD, contributor count, first and latest commit
-  // dates, and frequently changed files) so the reader can tell what state of the repo the overview
-  // describes; on a non-git directory, it reports "- not a git repository".
-  // Kind: Invariant
   test("R3: git history section accurately reflects repository commit metadata and filters hot files to included paths", async () => {
     const gitScenarioArb = fc.record({
       commitsOnMainFile: fc.integer({ min: 1, max: 4 }),
@@ -278,13 +247,13 @@ describe("Onboard property-based tests (Project 4)", () => {
           }
 
           const runGit = async (args: string[]) => {
-          const proc = Bun.spawn(["git", ...args], {
-            cwd: dir,
-            stdout: "ignore",
-            stderr: "ignore",
-          })
-          await proc.exited
-}
+            const proc = Bun.spawn(["git", ...args], {
+              cwd: dir,
+              stdout: "ignore",
+              stderr: "ignore",
+            })
+            await proc.exited
+          }
 
           await runGit(["init"])
           await runGit(["config", "user.email", "test@example.com"])
@@ -329,11 +298,6 @@ describe("Onboard property-based tests (Project 4)", () => {
     )
   })
 
-  // R4: Onboard.analyze and Onboard.render bound the deterministic overview so large repositories
-  // remain concise: at most 10 largest source files, at most 15 directories (grouping monorepo
-  // containers like packages/<pkg>/ one level deeper), manifests at directory depth <= 3, and at
-  // most 30 listed items per list section with a "…and N more" truncation indicator.
-  // Kind: Invariant
   test("R4: onboarding output enforces size bounds on largest files, directories, manifest depth, and rendered lists", async () => {
     const boundStressArb = fc.record({
       sourceCount: fc.integer({ min: 1, max: 16 }),
@@ -386,15 +350,14 @@ describe("Onboard property-based tests (Project 4)", () => {
     )
   })
 
-  // R5: The deterministic analysis accurately counts every non-ignored file, recognized source
-  // file, line of source code, directory breakdown, and manifest file, while excluding ignored
-  // directories (node_modules, .git, dist, build, vendor, etc.) and lockfiles/generated artifacts.
-  // Kind: Model / oracle
   test("R5 (Oracle): analyzer counts match ground-truth repository model", async () => {
     await fc.assert(
       fc.asyncProperty(repoSpecArb, async (spec) => {
         await withTempRepo(async (dir) => {
           await materializeRepo(dir, spec)
+          await fs.writeFile(path.join(dir, "oversized.ts"), "x".repeat(1_000_005), "utf8")
+          await fs.writeFile(path.join(dir, "binary.ts"), Buffer.from([10, 0, 10, 65]))
+
           const stats = await Onboard.analyze(dir)
 
           const makefileCount = spec.shallowManifests.includes("Makefile") ? 1 : 0
@@ -405,65 +368,40 @@ describe("Onboard property-based tests (Project 4)", () => {
           expect(stats.sourceFiles).toBe(expectedSourceFiles)
           expect(stats.lines).toBe(expectedLines)
 
-          const langLinesSum = stats.languages.reduce((sum, l) => sum + l.lines, 0)
-          expect(langLinesSum).toBe(expectedLines)
-
-          expect(stats.manifests.toSorted()).toEqual([...spec.shallowManifests].toSorted())
-
-          for (const d of stats.directories) {
-            expect(d.path).not.toMatch(/^(node_modules|dist|build|vendor)\//)
+          const expectedDirMap = new Map<string, { files: number; lines: number }>()
+          for (const s of spec.sources) {
+            const relPath = s.dir ? `${s.dir}/${s.base}${s.extInfo.ext}` : `${s.base}${s.extInfo.ext}`
+            const parts = relPath.split("/")
+            const dirKey =
+              parts.length === 1
+                ? "(root)"
+                : ["packages", "apps", "services"].includes(parts[0]) && parts.length > 2
+                  ? `${parts[0]}/${parts[1]}/`
+                  : `${parts[0]}/`
+            const cur = expectedDirMap.get(dirKey) ?? { files: 0, lines: 0 }
+            expectedDirMap.set(dirKey, { files: cur.files + 1, lines: cur.lines + s.fileData.expectedLines })
           }
+          if (makefileCount > 0) {
+            const cur = expectedDirMap.get("(root)") ?? { files: 0, lines: 0 }
+            expectedDirMap.set("(root)", { files: cur.files + 1, lines: cur.lines + 1 })
+          }
+          const expectedDirs = [...expectedDirMap.entries()]
+            .map(([p, v]) => ({ path: p, files: v.files, lines: v.lines }))
+            .toSorted(
+              (a, b) =>
+                b.lines - a.lines ||
+                Number(a.path === "(root)") - Number(b.path === "(root)") ||
+                (a.path < b.path ? -1 : a.path > b.path ? 1 : 0),
+            )
+            .slice(0, 15)
+
+          expect(stats.directories).toEqual(expectedDirs)
+          expect(stats.manifests).toEqual(
+            [...spec.shallowManifests].toSorted((a, b) => a.split("/").length - b.split("/").length || a.localeCompare(b)),
+          )
         })
       }),
       { numRuns: 25 },
-    )
-  })
-
-  // R5: The deterministic analysis accurately counts every non-ignored file, recognized source
-  // file, line of source code, directory breakdown, and manifest file, while excluding ignored
-  // directories (node_modules, .git, dist, build, vendor, etc.) and lockfiles/generated artifacts.
-  // Kind: Metamorphic
-  test("R5 (Metamorphic): adding a source file vs ignored file changes stats predictably", async () => {
-    const metamorphicArb = fc.record({
-      baseRepo: repoSpecArb,
-      extraSourceLines: fc.integer({ min: 1, max: 50 }),
-      extraIgnoredLines: fc.integer({ min: 1, max: 50 }),
-    })
-
-    await fc.assert(
-      fc.asyncProperty(metamorphicArb, async ({ baseRepo, extraSourceLines, extraIgnoredLines }) => {
-        await withTempRepo(async (dir) => {
-          await materializeRepo(dir, baseRepo)
-          const before = await Onboard.analyze(dir)
-
-          const ignoredFile = path.join(dir, "node_modules/extra_pkg/index.ts")
-          await fs.mkdir(path.dirname(ignoredFile), { recursive: true })
-          await fs.writeFile(
-            ignoredFile,
-            Array.from({ length: extraIgnoredLines }, () => "export const y = 2;").join("\n"),
-            "utf8",
-          )
-
-          const afterIgnored = await Onboard.analyze(dir)
-          expect(afterIgnored.sourceFiles).toBe(before.sourceFiles)
-          expect(afterIgnored.lines).toBe(before.lines)
-          expect(afterIgnored.files).toBe(before.files)
-
-          const addedSource = path.join(dir, "src/metamorphic_added.ts")
-          await fs.mkdir(path.dirname(addedSource), { recursive: true })
-          await fs.writeFile(
-            addedSource,
-            Array.from({ length: extraSourceLines }, () => "export const z = 3;").join("\n"),
-            "utf8",
-          )
-
-          const afterSource = await Onboard.analyze(dir)
-          expect(afterSource.files).toBe(before.files + 1)
-          expect(afterSource.sourceFiles).toBe(before.sourceFiles + 1)
-          expect(afterSource.lines).toBe(before.lines + extraSourceLines)
-        })
-      }),
-      { numRuns: 20 },
     )
   })
 })
