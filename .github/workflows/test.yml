@@ -63,10 +63,9 @@ jobs:
 
       - name: Run unit tests
         timeout-minutes: 20
-        # Default turbo concurrency (10) oversubscribes ubuntu-latest's 4
-        # vCPUs across 5 packages' test tasks running at once — same
-        # contention issue typecheck.yml already caps for tsgo.
-        run: GITHUB_ACTIONS=false bun turbo test --concurrency=4
+        # Keep capacity available for timing-sensitive tests inside opencode's
+        # Bun process while other package test tasks run alongside it.
+        run: GITHUB_ACTIONS=false bun turbo test --concurrency=2
 
       - name: Check generated client
         timeout-minutes: 5
