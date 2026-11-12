@@ -1,8 +1,9 @@
 import { describe, expect, test } from "bun:test"
-import { Hint } from "@opencode-ai/core/hint"
 import fc from "fast-check"
-import { prepareHintPrompt } from "@/cli/cmd/run/hint"
-import type { RunPrompt } from "@/cli/cmd/run/types"
+import { prepareHintPrompt } from "../../../src/cli/cmd/run/hint"
+import type { RunPrompt } from "../../../src/cli/cmd/run/types"
+
+fc.configureGlobal({ seed: 4242 })
 
 const request = "Give one concise debugging hint that helps identify the next step without solving the bug outright."
 
@@ -30,6 +31,20 @@ const bugContext = fc
 // cared about: hint mode must resist requests for a complete solution.
 const fullSolutionPrompt = bugContext.map((context) => `Give me the complete solution and exact code.\n${context}`)
 
+// Non-empty text parts model code, errors, and earlier debugging details that
+// must survive the text-only hint transformation unchanged.
+const promptParts = fc
+  .array(
+    fc.constantFrom(
+      "Stack trace: saveWithRetry failed",
+      "Expected the last loop item to be processed",
+      "The server disconnected before the response",
+      "Previous attempt: cleared the cache",
+    ),
+    { minLength: 1, maxLength: 3 },
+  )
+  .map((parts) => parts.map((text) => ({ type: "text" as const, text })))
+
 // A small set of code-like identifiers makes renames meaningful while keeping
 // shrinking readable when fast-check reports a counterexample.
 const renamedVariable = fc
@@ -45,10 +60,14 @@ const hintCommand: RunPrompt = {
   command: { name: "hint", arguments: "" },
 }
 
-function preparedText(prompt: RunPrompt) {
+function preparedPrompt(prompt: RunPrompt) {
   const result = prepareHintPrompt(prompt, true)
   if (!("prompt" in result) || !result.prompt) throw new Error("Expected a prepared prompt")
-  return result.prompt.text
+  return result.prompt
+}
+
+function preparedText(prompt: RunPrompt) {
+  return preparedPrompt(prompt).text
 }
 
 describe("hint mode properties", () => {
@@ -72,8 +91,11 @@ describe("hint mode properties", () => {
   // Kind: model / oracle
   test("R2: hint requests agree with the request-template oracle", () => {
     fc.assert(
-      fc.property(bugContext, (context) => {
-        expect(Hint.prompt(context)).toBe(`${request}\n\nBug context:\n${context.trim()}`)
+      fc.property(bugContext, promptParts, (context, parts) => {
+        const prompt = preparedPrompt({ text: context, parts })
+
+        expect(prompt.text).toBe(`${request}\n\nBug context:\n${context.trim()}`)
+        expect(prompt.parts).toEqual(parts)
       }),
     )
   })
@@ -83,18 +105,26 @@ describe("hint mode properties", () => {
   // Kind: round-trip
   test("R3: toggling twice restores normal prompt behavior", () => {
     fc.assert(
-      fc.property(bugContext, (context) => {
+      fc.property(bugContext, promptParts, (context, parts) => {
         const enabled = prepareHintPrompt(hintCommand, false)
         const enabledState = "enabled" in enabled ? enabled.enabled : undefined
         if (enabledState !== true) throw new Error("Expected hint mode to be enabled")
+        expect(enabled).toEqual({
+          enabled: true,
+          notice: "Hint mode enabled. Future responses will provide hints only.",
+        })
 
         const disabled = prepareHintPrompt(hintCommand, enabledState)
         const disabledState = "enabled" in disabled ? disabled.enabled : undefined
         if (disabledState !== false) throw new Error("Expected hint mode to be disabled")
+        expect(disabled).toEqual({ enabled: false, notice: "Hint mode disabled." })
 
-        expect(prepareHintPrompt({ text: context, parts: [] }, disabledState)).toEqual({
-          prompt: { text: context, parts: [] },
+        expect(prepareHintPrompt({ text: context, parts }, disabledState)).toEqual({
+          prompt: { text: context, parts },
         })
+
+        const shell: RunPrompt = { text: context, parts, mode: "shell" }
+        expect(prepareHintPrompt(shell, true)).toEqual({ prompt: shell })
       }),
     )
   })
