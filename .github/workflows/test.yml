@@ -61,12 +61,17 @@ jobs:
         working-directory: packages/opencode
         run: bun test test/cli/run/hint.property.test.ts
 
-      - name: Run unit tests
+      - name: Build generated SDK
+        run: bun run --cwd packages/sdk/js build
+
+      - name: Run opencode unit tests
+        working-directory: packages/opencode
         timeout-minutes: 20
-        # Default turbo concurrency (10) oversubscribes ubuntu-latest's 4
-        # vCPUs across 5 packages' test tasks running at once — same
-        # contention issue typecheck.yml already caps for tsgo.
-        run: GITHUB_ACTIONS=false bun turbo test --concurrency=4
+        run: GITHUB_ACTIONS=false bun test --timeout 30000 --only-failures
+
+      - name: Run remaining unit tests
+        timeout-minutes: 20
+        run: GITHUB_ACTIONS=false bun turbo test --filter='!opencode' --concurrency=4
 
       - name: Check generated client
         timeout-minutes: 5
