@@ -1,0 +1,12 @@
+diff --git a/packages/opencode/src/cli/cmd/run/hint.ts b/packages/opencode/src/cli/cmd/run/hint.ts
+--- a/packages/opencode/src/cli/cmd/run/hint.ts
++++ b/packages/opencode/src/cli/cmd/run/hint.ts
+@@ -9,7 +9,7 @@ export function prepareHintPrompt(prompt: RunPrompt, enabled: boolean) {
+       notice: next ? "Hint mode enabled. Future responses will provide hints only." : "Hint mode disabled.",
+     }
+   }
+-  if (!enabled || prompt.mode === "shell" || prompt.command) return { prompt }
++  if (prompt.mode === "shell" || prompt.command) return { prompt }
+   return {
+     prompt: {
+       ...prompt,

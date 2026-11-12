@@ -1,0 +1,19 @@
+{
+  "$schema": "https://raw.githubusercontent.com/stryker-mutator/stryker-js/master/packages/api/schema/stryker-core.json",
+  "testRunner": "command",
+  "commandRunner": {
+    "command": "bun test test/cli/run/hint.property.test.ts"
+  },
+  "mutate": ["src/cli/cmd/run/hint.ts:4-18"],
+  "ignorePatterns": ["tsconfig.json", "**/tsconfig*.json", "bunfig.toml"],
+  "reporters": ["html", "clear-text", "progress", "json"],
+  "htmlReporter": {
+    "fileName": "reports/mutation/mutation.html"
+  },
+  "jsonReporter": {
+    "fileName": "reports/mutation/mutation.json"
+  },
+  "timeoutMS": 60000,
+  "concurrency": 2,
+  "coverageAnalysis": "off"
+}

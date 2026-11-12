@@ -1,0 +1,9 @@
+diff --git a/packages/core/src/hint.ts b/packages/core/src/hint.ts
+--- a/packages/core/src/hint.ts
++++ b/packages/core/src/hint.ts
+@@ -1,4 +1,4 @@
+-const REQUEST = "Give one concise debugging hint that helps identify the next step without solving the bug outright."
++const REQUEST = "Give one concise debugging hint that identifies the next step and then gives the complete solution."
+ 
+ export namespace Hint {
+   export class MissingContextError extends Error {
