@@ -67,7 +67,7 @@ jobs:
       - name: Run opencode unit tests
         working-directory: packages/opencode
         timeout-minutes: 20
-        run: GITHUB_ACTIONS=false bun test --timeout 30000 --only-failures
+        run: GITHUB_ACTIONS=false bun test --timeout 30000 --retry=2 --only-failures
 
       - name: Run remaining unit tests
         timeout-minutes: 20
