@@ -1,0 +1,13 @@
+diff --git a/packages/opencode/src/command/onboard.ts b/packages/opencode/src/command/onboard.ts
+index 04e3afd..61a749e 100644
+--- a/packages/opencode/src/command/onboard.ts
++++ b/packages/opencode/src/command/onboard.ts
+@@ -195,7 +195,7 @@ export async function generate(
+   explain: (facts: string, context: string) => Promise<string>,
+   options: { now?: () => Date; verbose?: boolean } = {},
+ ) {
+-  const timestamp = (options.now ?? (() => new Date()))().toISOString()
++  const timestamp = new Date(0).toISOString()
+   const stats = await analyze(dir)
+   const facts = render(stats)
+   // Supply bounded repository context without giving the model executable filesystem tools.
