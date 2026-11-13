@@ -1,0 +1,13 @@
+diff --git a/packages/opencode/src/command/onboard.ts b/packages/opencode/src/command/onboard.ts
+index 04e3afd..57e680b 100644
+--- a/packages/opencode/src/command/onboard.ts
++++ b/packages/opencode/src/command/onboard.ts
+@@ -228,7 +228,7 @@ export async function generate(
+     "# Repository onboarding",
+     `Generated: ${timestamp}`,
+     "## Overview",
+-    ...paragraphs.slice(0, options.verbose ? undefined : 3),
++    ...paragraphs.slice(0, options.verbose ? undefined : 4),
+     "## Repository statistics",
+     facts,
+     "",
