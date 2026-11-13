@@ -87,14 +87,14 @@ const FILENAME_LANGUAGES: Record<string, string> = {
 
 // Lockfiles, build output, vendored and generated code would otherwise dominate the breakdown.
 const EXCLUDED = [
-  /(^|\/)(node_modules|bower_components|vendor|third_party|dist|build|out|target|coverage|__pycache__|\.venv|venv|\.next|\.nuxt|\.svelte-kit|Pods|generated|__generated__)\//,
+  /(^|\/)(node_modules|bower_components|vendor|third_party|build|out|target|coverage|__pycache__|\.venv|venv|\.next|\.nuxt|\.svelte-kit|Pods|generated|__generated__)\//,
   /(^|\/)(package-lock\.json|bun\.lockb?|yarn\.lock|pnpm-lock\.yaml|Cargo\.lock|go\.sum|poetry\.lock|uv\.lock|composer\.lock|Gemfile\.lock|flake\.lock)$/,
   /\.min\.(js|css)$/,
   /\.(gen|generated|pb|g)\.[a-z]+$|_pb2\.py$/,
   /\.map$/,
 ]
 
-const WALK_IGNORED = new Set([".git", "node_modules", "vendor", "dist", "build", "out", "target", ".venv", "venv"])
+const WALK_IGNORED = new Set([".git", "node_modules", "vendor", "build", "out", "target", ".venv", "venv"])
 
 const TEST = /(^|\/)(test|tests|__tests__|spec|e2e)\/|\.(test|spec)\.[a-z]+$|_test\.(go|py)$|(^|\/)test_[^/]+\.py$/
 
