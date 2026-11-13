@@ -1,0 +1,13 @@
+diff --git a/packages/opencode/src/command/onboard.ts b/packages/opencode/src/command/onboard.ts
+index 04e3afd..5d3279b 100644
+--- a/packages/opencode/src/command/onboard.ts
++++ b/packages/opencode/src/command/onboard.ts
+@@ -390,7 +390,7 @@ async function measure(dir: string, item: { path: string; language: string }) {
+   const bytes = await file.bytes().catch(() => undefined)
+   if (!bytes || bytes.subarray(0, 8000).includes(0)) return
+   const newlines = bytes.reduce((count, byte) => (byte === 10 ? count + 1 : count), 0)
+-  const lines = bytes.length > 0 && bytes[bytes.length - 1] !== 10 ? newlines + 1 : newlines
++  const lines = newlines
+   return { ...item, lines }
+ }
+ 
