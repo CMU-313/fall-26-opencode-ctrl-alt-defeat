@@ -1,0 +1,11 @@
+diff --git a/packages/opencode/src/cli/cmd/run/hint.ts b/packages/opencode/src/cli/cmd/run/hint.ts
+--- a/packages/opencode/src/cli/cmd/run/hint.ts
++++ b/packages/opencode/src/cli/cmd/run/hint.ts
+@@ -13,6 +13,7 @@ export function prepareHintPrompt(prompt: RunPrompt, enabled: boolean) {
+   return {
+     prompt: {
+       ...prompt,
++      parts: [],
+       text: Hint.prompt(prompt.text),
+     },
+   }

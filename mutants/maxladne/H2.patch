@@ -1,0 +1,12 @@
+diff --git a/packages/core/src/hint.ts b/packages/core/src/hint.ts
+--- a/packages/core/src/hint.ts
++++ b/packages/core/src/hint.ts
+@@ -9,7 +9,7 @@ export namespace Hint {
+   }
+ 
+   export function prompt(context: string | undefined) {
+-    const bug = context?.trim()
++    const bug = context
+     if (!bug) throw new MissingContextError()
+ 
+     return `${REQUEST}\n\nBug context:\n${bug}`
